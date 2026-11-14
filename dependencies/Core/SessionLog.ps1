@@ -48,7 +48,11 @@ function Get-SessionReport {
     $report += "============================================"
     $report += ""
     $report += "Computer Name  : $($log.ComputerName)"
+    $report += "Toolkit        : $(Get-ToolkitProductName)"
     $report += "Toolkit Version: $($log.ScriptVersion)"
+    if ($script:Toolkit.ClientVersion) { $report += "Core Version   : $($script:Toolkit.CoreVersion)" }
+    $support = Get-ToolkitBrandingValue 'SupportContact'
+    if ($support) { $report += "Support        : $support" }
     $report += "Session Start  : $($log.StartTime.ToString('yyyy-MM-dd HH:mm:ss'))"
     $report += "Session End    : $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))"
     $report += "Duration       : $($duration.ToString('hh\:mm\:ss'))"

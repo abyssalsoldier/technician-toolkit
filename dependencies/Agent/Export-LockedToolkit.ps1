@@ -9,6 +9,12 @@ $toolkitRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 # Load Crypto module (+ ConvertTo-RobocopyPathArg from UsbDetection)
 . (Join-Path $toolkitRoot "dependencies\Core\Crypto.ps1")
 . (Join-Path $toolkitRoot "dependencies\Core\UsbDetection.ps1")
+. (Join-Path $toolkitRoot "dependencies\Core\ClientOverlay.ps1")
+
+# Exe name stays EndpointToolkit_Locked.exe (ConnectWise Toolbox entries depend on it) unless client\branding.json sets ExeName
+$branding = Get-ToolkitBranding -Parent $toolkitRoot
+$exeBaseName = if ($branding.ExeName) { $branding.ExeName } else { "EndpointToolkit" }
+$repoOnly = Get-ToolkitPayloadExcludes -Root $toolkitRoot   # tools\, client.example\, agent/client docs
 
 Write-Host "=== Export Locked Toolkit ===" -ForegroundColor Cyan
 Write-Host "This will package the current toolkit folder into a standalone .exe file."
@@ -29,7 +35,7 @@ if (-not (Test-Path $outPath)) {
     exit 1
 }
 
-$targetExe = Join-Path $outPath "EndpointToolkit_Locked.exe"
+$targetExe = Join-Path $outPath "${exeBaseName}_Locked.exe"
 
 Write-Host "`nStaging toolkit..." -ForegroundColor Yellow
 $tempStaging = Join-Path $env:TEMP "ToolkitExport_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
@@ -39,8 +45,10 @@ $robocopyArgs = @(
     (ConvertTo-RobocopyPathArg $toolkitRoot),
     (ConvertTo-RobocopyPathArg $tempStaging),
     '/MIR',
-    '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', '_builds',
-    '/XF', '.gitignore', 'Export-LockedToolkit.ps1', '.toolkit-key', 'build.ps1',
+    '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', '_builds') +
+    @($repoOnly.Dirs | ForEach-Object { ConvertTo-RobocopyPathArg $_ }) + @(
+    '/XF', '.gitignore', 'Export-LockedToolkit.ps1', '.toolkit-key', 'build.ps1') +
+    @($repoOnly.Files | ForEach-Object { ConvertTo-RobocopyPathArg $_ }) + @(
     '/NFL', '/NDL', '/NJH', '/NJS',
     '/R:2', '/W:1'
 )

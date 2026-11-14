@@ -367,7 +367,7 @@ function Get-WindowsDebloatUI {
     $header.FontSize = 22
     $header.FontWeight = 'Bold'
     $header.Foreground = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $header.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
     $panel.Children.Add($header) | Out-Null
 
@@ -465,7 +465,7 @@ function Get-WindowsDebloatUI {
     $runBtn.FontSize = 14
     $runBtn.FontWeight = 'Bold'
     $runBtn.Background = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $runBtn.Foreground = New-Object System.Windows.Media.SolidColorBrush(
         [System.Windows.Media.ColorConverter]::ConvertFromString('#1E1E2E'))
     $runBtn.Margin = [System.Windows.Thickness]::new(0, 0, 0, 12)
@@ -477,7 +477,7 @@ function Get-WindowsDebloatUI {
     $progress.IsIndeterminate = $false
     $progress.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
     $progress.Foreground = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $progress.Background = New-Object System.Windows.Media.SolidColorBrush(
         [System.Windows.Media.ColorConverter]::ConvertFromString('#2D2D44'))
     $panel.Children.Add($progress) | Out-Null

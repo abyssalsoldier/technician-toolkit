@@ -24,7 +24,7 @@ function Copy-ToolkitToLocal {
     Add-Type -AssemblyName PresentationFramework
 
     $win = New-Object System.Windows.Window
-    $win.Title = 'Endpoint Build Toolkit'
+    $win.Title = Get-ToolkitProductName
     $win.Width = 420; $win.Height = 150
     $win.WindowStartupLocation = 'CenterScreen'
     $win.ResizeMode = 'NoResize'
@@ -217,7 +217,14 @@ function Update-UsbToolkit {
         $tempExtract
     }
     if (-not (Test-Path (Join-Path $sourceDir 'dependencies\Invoke-EndpointSetup.ps1'))) {
-        & $fail 'The downloaded package does not look like an Endpoint Toolkit release.'
+        & $fail "The downloaded package does not look like a $(Get-ToolkitProductName) release."
+        return
+    }
+    # A client USB must only take client releases: mirroring a core-only release would delete client\.
+    $hasLocalClient  = Test-Path (Join-Path $script:Toolkit.Parent 'client')
+    $hasSourceClient = Test-Path (Join-Path $sourceDir 'client')
+    if ($hasLocalClient -and -not $hasSourceClient) {
+        & $fail 'The downloaded release does not contain this toolkit''s client customizations (client folder), so it was not applied. Check UpdateBaseUrl in client\branding.json.'
         return
     }
 
@@ -232,16 +239,22 @@ function Update-UsbToolkit {
     ) + $common
     $p1 = Start-Process robocopy -ArgumentList $mirrorArgs -Wait -PassThru -WindowStyle Hidden
 
-    # Pass 2: add/refresh shipped CustomInstallers without deleting installers the technician added
+    # Pass 2: add/refresh shipped CustomInstallers (core and client) without deleting installers the technician added.
+    # Pass 1 skips every folder named CustomInstallers, including client\CustomInstallers.
     $exit2 = 0
-    $srcCustom = Join-Path $sourceDir 'dependencies\CustomInstallers'
-    if (Test-Path $srcCustom) {
+    $customPairs = @(
+        @{ Src = (Join-Path $sourceDir 'dependencies\CustomInstallers'); Dst = (Join-Path $script:Toolkit.Root 'CustomInstallers') },
+        @{ Src = (Join-Path $sourceDir 'client\CustomInstallers');       Dst = (Join-Path $script:Toolkit.Parent 'client\CustomInstallers') }
+    )
+    foreach ($pair in $customPairs) {
+        if (-not (Test-Path $pair.Src)) { continue }
         $customArgs = @(
-            (ConvertTo-RobocopyPathArg $srcCustom),
-            (ConvertTo-RobocopyPathArg (Join-Path $script:Toolkit.Root 'CustomInstallers')),
+            (ConvertTo-RobocopyPathArg $pair.Src),
+            (ConvertTo-RobocopyPathArg $pair.Dst),
             '/E'
         ) + $common
-        $exit2 = (Start-Process robocopy -ArgumentList $customArgs -Wait -PassThru -WindowStyle Hidden).ExitCode
+        $e = (Start-Process robocopy -ArgumentList $customArgs -Wait -PassThru -WindowStyle Hidden).ExitCode
+        if ($e -gt $exit2) { $exit2 = $e }
     }
 
     Remove-Item $tempZip -Force -ErrorAction SilentlyContinue

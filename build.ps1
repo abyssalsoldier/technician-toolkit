@@ -32,23 +32,35 @@ $repoRoot = $PSScriptRoot
 $buildsRoot = Join-Path $repoRoot "_builds"
 
 # Read version
-$version = (Get-Content (Join-Path $repoRoot "dependencies\version.txt") -ErrorAction SilentlyContinue).Trim()
-if (-not $version) { $version = "0.0.0" }
+# Client overlay helpers (branding, effective version, repo-only excludes)
+. (Join-Path $repoRoot "dependencies\Core\ClientOverlay.ps1")
+$overlayWarnings = [System.Collections.ArrayList]::new()
+$branding = Get-ToolkitBranding -Parent $repoRoot -Warnings $overlayWarnings
+foreach ($w in $overlayWarnings) { Write-Host "WARNING: $w" -ForegroundColor Yellow }
+
+# Effective version: client\version.txt when present, else dependencies\version.txt
+$versionInfo = Get-ToolkitVersionInfo -Root (Join-Path $repoRoot "dependencies") -Parent $repoRoot
+$version = $versionInfo.Effective
+$productName = if ($branding.IsClient) { $branding.ProductName } else { "Endpoint Build Toolkit" }
+# Exe name stays EndpointToolkit.exe (ConnectWise Toolbox entries depend on it) unless the client sets ExeName
+$exeBaseName = if ($branding.ExeName) { $branding.ExeName } else { "EndpointToolkit" }
 
 # Create timestamped build folder: _builds\v1.0.0_2026-03-26_1430
 $timestamp = Get-Date -Format "yyyy-MM-dd_HHmm"
 $buildName = "v${version}_${timestamp}"
 $buildDir = Join-Path $buildsRoot $buildName
 
-Write-Host "Building Endpoint Build Toolkit v$version" -ForegroundColor Cyan
+Write-Host "Building $productName v$version" -ForegroundColor Cyan
+if ($versionInfo.Client) { Write-Host "  Core: v$($versionInfo.Core)  Client: v$($versionInfo.Client)" -ForegroundColor White }
 Write-Host "  Output: _builds\$buildName\" -ForegroundColor White
 Write-Host ""
 
 New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 
 # Common robocopy exclusions (mirrors release.yml)
-$robocopyExcludeDirs = @(".git", ".github", ".claude", ".vscode", "_builds")
-$robocopyExcludeFiles = @(".gitignore", ".gitattributes", "README.md", "build.ps1")
+$repoOnly = Get-ToolkitPayloadExcludes -Root $repoRoot   # tools\, client.example\, agent/client docs
+$robocopyExcludeDirs = @(".git", ".github", ".claude", ".vscode", "_builds") + @($repoOnly.Dirs | ForEach-Object { ConvertTo-RobocopyPathArg $_ })
+$robocopyExcludeFiles = @(".gitignore", ".gitattributes", "README.md", "build.ps1") + @($repoOnly.Files | ForEach-Object { ConvertTo-RobocopyPathArg $_ })
 
 if ($Dev -or $Test) {
     # --- Dev mode: copy files directly, no zip ---
@@ -137,7 +149,7 @@ if ($Dev -or $Test) {
         Write-Host "Creating Self-Extracting EXE wrapper (SFX) using IExpress..." -ForegroundColor Cyan
 
         # Write output EXE directly to builds root to avoid folder conflicts during IExpress compilation
-        $targetExe = Join-Path $buildsRoot "EndpointToolkit.exe"
+        $targetExe = Join-Path $buildsRoot "$exeBaseName.exe"
         if (Test-Path $targetExe) { Remove-Item $targetExe -Force -ErrorAction SilentlyContinue }
 
         $bootstrapPath = Join-Path $buildDir "bootstrap.ps1"
@@ -214,7 +226,7 @@ InstallPrompt=
 DisplayLicense=
 FinishMessage=
 TargetName=$targetExe
-FriendlyName=Endpoint Build Toolkit
+FriendlyName=$productName
 AppLaunched=powershell.exe -NoProfile -ExecutionPolicy Bypass -File bootstrap.ps1
 PostInstallCmd=<None>
 AdminQuietInstCmd=

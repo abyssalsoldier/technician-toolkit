@@ -21,7 +21,7 @@ function Get-NetworkDiagnosticsUI {
     $panel.Margin = [System.Windows.Thickness]::new(0, 0, 12, 0)
 
     $accentBrush = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $dimBrush = New-Object System.Windows.Media.SolidColorBrush(
         [System.Windows.Media.ColorConverter]::ConvertFromString('#A6ADC8'))
     $textBrush = New-Object System.Windows.Media.SolidColorBrush(

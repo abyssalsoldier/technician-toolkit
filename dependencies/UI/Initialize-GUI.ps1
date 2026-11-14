@@ -5,6 +5,9 @@ function Load-XamlWindow {
     param([string]$XamlPath)
     $content = Get-Content $XamlPath -Raw
     $content = $content -replace 'x:Name="', 'Name="'
+    # Branded accent: the XAML is authored with the core accent #89B4FA
+    $accent = (Get-ToolkitAccent).TrimStart('#')
+    if ($accent -ne '89B4FA') { $content = $content -ireplace '89B4FA', $accent }
     $reader = New-Object System.Xml.XmlTextReader([System.IO.StringReader]::new($content))
     return [System.Windows.Markup.XamlReader]::Load($reader)
 }
@@ -76,10 +79,28 @@ function Start-ToolkitGUI {
         }
     }
 
-    # Set version in title bar
+    # Branding + version in title bar
+    $productName = Get-ToolkitProductName
     $txtVersion = $window.FindName('txtVersion')
-    $txtVersion.Text = "v$($script:Toolkit.Version)"
-    $window.Title = "Endpoint Toolkit v$($script:Toolkit.Version)"
+    $txtVersion.Text = if ($script:Toolkit.ClientVersion) { "v$($script:Toolkit.Version)  (core v$($script:Toolkit.CoreVersion))" } else { "v$($script:Toolkit.Version)" }
+    $window.Title = "$productName v$($script:Toolkit.Version)"
+    $txtProductName = $window.FindName('txtProductName')
+    if ($txtProductName) { $txtProductName.Text = $productName }
+    $logoPath = Get-ToolkitLogoPath
+    $imgLogo = $window.FindName('imgLogo')
+    if ($logoPath -and $imgLogo) {
+        try {
+            $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bmp.BeginInit()
+            $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad   # don't lock the file (temp cleanup)
+            $bmp.UriSource = [Uri]$logoPath
+            $bmp.EndInit()
+            $imgLogo.Source = $bmp
+            $imgLogo.Visibility = 'Visible'
+        } catch {
+            [void]$script:Toolkit.OverlayWarnings.Add("Client logo could not be loaded: $($_.Exception.Message)")
+        }
+    }
 
     # --- Authentication ---
     Show-AuthDialog
@@ -103,9 +124,10 @@ function Start-ToolkitGUI {
     Initialize-SessionLog
 
     # --- Load and register modules ---
-    $modulesPath = Join-Path $script:Toolkit.Root 'Modules'
-    if (Test-Path $modulesPath) {
-        Get-ChildItem -Path $modulesPath -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
+    # Core modules first, then client\Modules (a broken client module is skipped, not fatal)
+    Get-ToolkitModuleFiles | ForEach-Object {
+        $moduleFile = $_
+        try { . $moduleFile.FullName } catch { [void]$script:Toolkit.OverlayWarnings.Add("Module $($moduleFile.Name) failed to load: $($_.Exception.Message)") }
     }
     $Global:SyncHash.Modules = @(Get-RegisteredModules)
 
@@ -157,8 +179,7 @@ function Start-ToolkitGUI {
             $hdr.Text = $mod.Label
             $hdr.FontSize = 20
             $hdr.FontWeight = 'Bold'
-            $hdr.Foreground = New-Object System.Windows.Media.SolidColorBrush(
-                [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+            $hdr.Foreground = New-ToolkitBrush
             $hdr.Margin = [System.Windows.Thickness]::new(0, 0, 0, 20)
             $panel.Children.Add($hdr) | Out-Null
 
@@ -205,7 +226,12 @@ function Start-ToolkitGUI {
     })
 
     # Log startup
-    Write-Log "Endpoint Toolkit v$($Global:SyncHash.Toolkit.Version) started" -Level Info
+    $startMsg = "$(Get-ToolkitProductName) v$($Global:SyncHash.Toolkit.Version) started"
+    if ($Global:SyncHash.Toolkit.ClientVersion) { $startMsg += " (core v$($Global:SyncHash.Toolkit.CoreVersion))" }
+    Write-Log $startMsg -Level Info
+    $support = Get-ToolkitBrandingValue 'SupportContact'
+    if ($support) { Write-Log "Support: $support" -Level Info }
+    foreach ($w in @($Global:SyncHash.Toolkit.OverlayWarnings)) { Write-Log $w -Level Warning }
     if ($Global:SyncHash.Toolkit.Authenticated) {
         Write-Log 'Authentication successful' -Level Success
     } else {
@@ -390,8 +416,8 @@ function Start-ModuleInBackground {
         Get-ChildItem -Path "$toolkitRoot\Core" -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
         # Load UI modules (for Write-Log)
         Get-ChildItem -Path "$toolkitRoot\UI" -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
-        # Load feature modules
-        Get-ChildItem -Path "$toolkitRoot\Modules" -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
+        # Load feature modules (core, then client\Modules)
+        Get-ToolkitModuleFiles | ForEach-Object { try { . $_.FullName } catch { } }
 
         try {
             & $EntryPoint
@@ -526,7 +552,7 @@ function Build-DashboardUI {
     $panel.Margin = [System.Windows.Thickness]::new(0, 0, 12, 0)
 
     $accentBrush = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $dimBrush = New-Object System.Windows.Media.SolidColorBrush(
         [System.Windows.Media.ColorConverter]::ConvertFromString('#A6ADC8'))
     $textBrush = New-Object System.Windows.Media.SolidColorBrush(

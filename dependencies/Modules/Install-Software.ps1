@@ -243,7 +243,7 @@ function Get-SoftwareManagerUI {
     $header.FontSize = 22
     $header.FontWeight = 'Bold'
     $header.Foreground = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $header.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
     $panel.Children.Add($header) | Out-Null
 
@@ -259,8 +259,8 @@ function Get-SoftwareManagerUI {
     # Build package list
     $catalog = Get-WingetPackageCatalog
 
-    if ($Global:SyncHash.Toolkit.Root) {
-        $customDir = Join-Path $Global:SyncHash.Toolkit.Root 'CustomInstallers'
+    # dependencies\CustomInstallers plus client\CustomInstallers (client overlay)
+    foreach ($customDir in @(Get-ToolkitInstallerPaths)) {
         if (Test-Path $customDir) {
             $localFiles = Get-ChildItem -Path $customDir -Include '*.exe', '*.msi' -Recurse -File | Where-Object { $_.Directory.Name -ne 'ODT' }  # ODT is used by Windows-Debloat, not an app
             foreach ($file in $localFiles) {
@@ -403,7 +403,7 @@ function Get-SoftwareManagerUI {
     $installBtn.FontSize = 14
     $installBtn.FontWeight = 'Bold'
     $installBtn.Background = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $installBtn.Foreground = New-Object System.Windows.Media.SolidColorBrush(
         [System.Windows.Media.ColorConverter]::ConvertFromString('#1E1E2E'))
     $installBtn.Margin = [System.Windows.Thickness]::new(0, 0, 0, 12)
@@ -415,7 +415,7 @@ function Get-SoftwareManagerUI {
     $progress.IsIndeterminate = $false
     $progress.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
     $progress.Foreground = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $progress.Background = New-Object System.Windows.Media.SolidColorBrush(
         [System.Windows.Media.ColorConverter]::ConvertFromString('#2D2D44'))
     $panel.Children.Add($progress) | Out-Null

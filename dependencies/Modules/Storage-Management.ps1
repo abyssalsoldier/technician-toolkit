@@ -1196,7 +1196,7 @@ function Update-DsaBreadcrumb {
         $btn.Padding = [System.Windows.Thickness]::new(4, 1, 4, 1)
         $btn.Margin = [System.Windows.Thickness]::new(0, 0, 2, 0)
         $btn.Background = [System.Windows.Media.Brushes]::Transparent
-        $btn.Foreground = New-DsaBrush '#89B4FA'
+        $btn.Foreground = New-DsaBrush (Get-ToolkitAccent)
         $btn.BorderThickness = [System.Windows.Thickness]::new(0)
         $btn.Cursor = 'Hand'
         $btn.Add_Click({ param($s, $e) Set-DsaCurrentNode -Node $s.Tag })
@@ -1780,7 +1780,7 @@ function Get-StorageManagementUI {
     $header.Text = 'Storage Management'
     $header.FontSize = 22
     $header.FontWeight = 'Bold'
-    $header.Foreground = New-DsaBrush '#89B4FA'
+    $header.Foreground = New-DsaBrush (Get-ToolkitAccent)
     $header.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
     [System.Windows.Controls.Grid]::SetRow($header, 0)
     $rootGrid.Children.Add($header) | Out-Null
@@ -1820,7 +1820,7 @@ function Get-StorageManagementUI {
     $scanBtn = New-Object System.Windows.Controls.Button
     $scanBtn.Content = 'Scan'
     $scanBtn.Padding = [System.Windows.Thickness]::new(16, 4, 16, 4)
-    $scanBtn.Background = New-DsaBrush '#89B4FA'
+    $scanBtn.Background = New-DsaBrush (Get-ToolkitAccent)
     $scanBtn.Foreground = New-DsaBrush '#1E1E2E'
     $scanBtn.Margin = [System.Windows.Thickness]::new(0, 0, 8, 0)
     $controlsPanel.Children.Add($scanBtn) | Out-Null

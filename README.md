@@ -14,6 +14,16 @@ The toolkit is built on a dynamic, plug-and-play architecture:
 *   **Auto-Discovery:** Modules are automatically discovered and registered by dropping a `.ps1` file into the `dependencies/Modules/` directory.
 *   **Registration:** Modules must expose a `Register-<Name>` function returning a hash table with `Name`, `Label`, `RequiresAuth`, `EntryPoint`, and `UIDefinition`. The core orchestrator dynamically builds the navigation menu based on these functions.
 
+### White-Label Core & Client Overlays
+This repository is the **core** and source of truth. Clients run their own branded toolkit from their own repo: a copy of this one with the core added as an `upstream` remote. All client-specific content lives in a single `client/` folder, which the core never ships:
+*   **Branding:** `client/branding.json` sets the product name, accent color, logo, support contact, update feed and hidden modules.
+*   **Modules & installers:** `client/Modules/` (same `Register-<Name>` contract; a matching `Name` replaces a core module) and `client/CustomInstallers/`.
+*   **Versioning & releases:** `client/version.txt` drives the client's own GitHub Releases and USB self-update. A client USB refuses any update that would remove `client/`.
+*   **Updating core:** `git fetch upstream && git merge upstream/master`. It merges cleanly because core never touches `client/`. `tools/Test-ClientOverlay.ps1 -CheckCore` validates the overlay and fails if any core file was edited.
+*   **Same runtime:** `client/` is read at launch from the toolkit folder, so `Launch.bat`, USB, SFX, the locked exe and ConnectWise Toolbox all behave the same. With no `client/`, the toolkit is the plain core.
+
+Setup and rules: [CLIENT_GUIDE.md](CLIENT_GUIDE.md). Instructions for AI agents: [AGENTS.md](AGENTS.md). Template: [client.example/](client.example/).
+
 ## 🔒 Zero-Trust Security & Distribution
 
 The toolkit handles sensitive environment access, so the entire repository and execution lifecycle is built under a strict zero-trust philosophy.
@@ -38,8 +48,8 @@ When `Launch.bat` is started from a USB drive, the toolkit first checks for upda
 
 ### Self-Update from GitHub Releases
 USB toolkits update themselves from this repository's [GitHub Releases](https://github.com/abyssalsoldier/Endpoint-toolkit/releases).
-*   **Publishing:** `.github/workflows/release.yml` runs on every push to `master`. If no release exists yet for the version in `dependencies/version.txt`, it builds a clean `latest.zip`, computes `latest.sha256`, and publishes release `vX.Y.Z` with `latest.zip`, `latest.sha256`, and `version.txt` attached. Pushes that don't bump the version publish nothing.
-*   **Checking:** On launch from a USB, the toolkit reads `releases/latest/download/version.txt`. Only a *newer* version triggers an update prompt (a message box, since the console is hidden).
+*   **Publishing:** `.github/workflows/release.yml` runs on every push to `master`. If no release exists yet for the version in `dependencies/version.txt` (or `client/version.txt` in a client repo), it builds a clean `latest.zip`, computes `latest.sha256`, and publishes release `vX.Y.Z` with `latest.zip`, `latest.sha256`, and `version.txt` attached. Pushes that don't bump the version publish nothing.
+*   **Checking:** On launch from a USB, the toolkit reads `releases/latest/download/version.txt` from this repo, or from the client's `UpdateBaseUrl` in a client build. Only a *newer* version triggers an update prompt (a message box, since the console is hidden).
 *   **Integrity:** The downloaded zip must match `latest.sha256` or the update is aborted. A missing or malformed checksum also aborts.
 *   **Deploying:** The release is mirrored onto the USB (files removed from the release are removed from the stick). Technician-added files in `CustomInstallers/` are kept, and the toolkit relaunches at the new version.
 *   **To ship a release:** bump `dependencies/version.txt`, commit, and push to `master`.
@@ -69,13 +79,17 @@ endpoint-build-toolkit/
 ├── Launch.bat                          Entry point (elevates, prioritizes PowerShell 7)
 ├── dependencies/
 │   ├── Invoke-EndpointSetup.ps1        WPF orchestrator & cleanup routine
-│   ├── Core/                           Infrastructure (Crypto, Auth, USB Detection)
+│   ├── Core/                           Infrastructure (Crypto, Auth, USB Detection, ClientOverlay)
 │   ├── UI/                             XAML layouts and Runspace synchronization
 │   ├── Modules/                        Feature Modules (see the Modules table above)
-│   ├── Profiles/                       JSON templates for client software builds
 │   ├── Agent/                          Admin tools (e.g., Export-LockedToolkit.ps1)
 │   ├── CustomInstallers/               Bundled static offline installers (ODT/ is used by Debloat)
-│   └── version.txt                     Toolkit version (bump to publish a release)
+│   └── version.txt                     Core version (bump to publish a core release)
+├── client/                             Client overlay. Only in client repos, never in core (see CLIENT_GUIDE.md)
+├── client.example/                     Template for client/ (repo-only, not shipped)
+├── tools/Test-ClientOverlay.ps1        Overlay validator + core-integrity check (repo-only, not shipped)
+├── CLIENT_GUIDE.md                     Setup and rules for client repos (repo-only, not shipped)
+├── AGENTS.md / CLAUDE.md               Instructions for AI agents (repo-only, not shipped)
 ├── SOFTWARE_CATALOG.md                 winget packages offered by Software Manager
 ├── build.ps1                           Local build / test script (_builds/)
 └── .github/workflows/release.yml       Publishes GitHub Releases used by self-update

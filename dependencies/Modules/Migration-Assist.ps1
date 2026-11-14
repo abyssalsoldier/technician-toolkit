@@ -1314,7 +1314,7 @@ function New-MaPasswordBox {
 }
 
 function Get-MigrationAssistUI {
-    $accent = New-MaBrush '#89B4FA'
+    $accent = New-MaBrush (Get-ToolkitAccent)
     $dim = New-MaBrush '#A6ADC8'
     $text = New-MaBrush '#CDD6F4'
     $dark = New-MaBrush '#1E1E2E'

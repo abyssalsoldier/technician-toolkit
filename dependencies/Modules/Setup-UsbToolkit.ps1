@@ -17,7 +17,7 @@ function Get-UsbToolkitUI {
     $header.FontSize = 22
     $header.FontWeight = 'Bold'
     $header.Foreground = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $header.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
     $panel.Children.Add($header) | Out-Null
 
@@ -496,12 +496,15 @@ function Invoke-UsbToolkitSetup {
 
     $driveRoot = "${DriveLetter}:\"
 
+    $repoOnly = Get-ToolkitPayloadExcludes -Root $sourceRoot   # tools\, client.example\, agent/client docs
     $robocopyArgs = @(
         (ConvertTo-RobocopyPathArg $sourceRoot),
         (ConvertTo-RobocopyPathArg $driveRoot),
         '/E',
-        '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', '_builds', 'System Volume Information', '$RECYCLE.BIN',
-        '/XF', '.gitignore', '.toolkit-key', 'build.ps1',
+        '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', '_builds', 'System Volume Information', '$RECYCLE.BIN') +
+        @($repoOnly.Dirs | ForEach-Object { ConvertTo-RobocopyPathArg $_ }) + @(
+        '/XF', '.gitignore', '.toolkit-key', 'build.ps1') +
+        @($repoOnly.Files | ForEach-Object { ConvertTo-RobocopyPathArg $_ }) + @(
         '/NFL', '/NDL', '/NJH', '/NJS',
         '/R:2', '/W:1'
     )

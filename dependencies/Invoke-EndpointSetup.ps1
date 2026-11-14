@@ -1,5 +1,5 @@
 # Invoke-EndpointSetup.ps1
-# Endpoint Build Toolkit v1.0 — WPF GUI orchestrator
+# Endpoint Toolkit v2 — WPF GUI orchestrator (core; client branding/modules come from client\, see ClientOverlay.ps1)
 # Run as Administrator
 
 param(
@@ -57,7 +57,6 @@ $win32Api::ShowWindow($win32Api::GetConsoleWindow(), 0) | Out-Null
 if (-not $script:Toolkit.Version) { $script:Toolkit.Version = "0.0.0" }
 
 $script:ToolkitKey = $null
-$Host.UI.RawUI.WindowTitle = "Endpoint Build Toolkit v$($script:Toolkit.Version)"
 
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
@@ -75,6 +74,10 @@ if (Test-Path $corePath) {
     exit
 }
 
+# --- Client overlay: branding, effective version, update feed (core defaults when client\ is absent) ---
+Initialize-ToolkitOverlay
+$Host.UI.RawUI.WindowTitle = "$(Get-ToolkitProductName) v$($script:Toolkit.Version)"
+
 # --- Load UI modules ---
 $uiPath = "$PSScriptRoot\UI"
 if (Test-Path $uiPath) {
@@ -89,7 +92,8 @@ if (Test-Path $uiPath) {
 # Updates come from the GitHub releases of abyssalsoldier/Endpoint-toolkit (published by .github/workflows/release.yml).
 # When launched from a USB, the toolkit is copied to a local temp folder and this running instance is
 # re-pointed at it, so the drive can be unplugged at any point after startup.
-$UpdateBaseUrl = 'https://github.com/abyssalsoldier/Endpoint-toolkit/releases/latest/download'
+# The feed comes from client\branding.json UpdateBaseUrl in client builds (empty = no self-update).
+$UpdateBaseUrl = Get-ToolkitBrandingValue 'UpdateBaseUrl'
 $localCopyRoot = $null
 if ($Localized -and $UsbDrive) {
     # Legacy relaunch path (kept for compatibility)
@@ -100,7 +104,7 @@ if ($Localized -and $UsbDrive) {
 } else {
     Test-UsbExecution
     if ($script:Toolkit.IsUsb) {
-        Update-UsbToolkit -UpdateBaseUrl $UpdateBaseUrl
+        if ($UpdateBaseUrl) { Update-UsbToolkit -UpdateBaseUrl $UpdateBaseUrl }
 
         $usbSerial = Get-DriveSerial -DriveLetter $script:Toolkit.UsbDrive
         # Expand 8.3 short names (e.g. JESSER~1); module discovery compares against long file paths

@@ -1,8 +1,11 @@
 name: Build Release
 
-# Publishes a GitHub Release whenever dependencies/version.txt is bumped on master.
-# USB toolkits self-update from:
-#   https://github.com/abyssalsoldier/Endpoint-toolkit/releases/latest/download/{version.txt,latest.zip,latest.sha256}
+# Publishes a GitHub Release whenever the toolkit version is bumped on master.
+#   Core repo   : version = dependencies/version.txt
+#   Client repo : version = client/version.txt (the client overlay, see CLIENT_GUIDE.md)
+# Releases go to THIS repository (github.repository), so a client repo publishes to its own feed.
+# USB toolkits self-update from <repo>/releases/latest/download/{version.txt,latest.zip,latest.sha256}
+# (core default in dependencies/Core/ClientOverlay.ps1, client feed in client/branding.json UpdateBaseUrl).
 
 on:
   push:
@@ -21,12 +24,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Read version
+      - name: Read version and product name
         id: version
         run: |
-          VERSION=$(cat dependencies/version.txt | tr -d '[:space:]')
+          if [ -f client/version.txt ]; then
+            VERSION=$(cat client/version.txt | tr -d '[:space:]')
+            echo "Client build (core v$(cat dependencies/version.txt | tr -d '[:space:]'))"
+          else
+            VERSION=$(cat dependencies/version.txt | tr -d '[:space:]')
+          fi
+          NAME="Endpoint Toolkit"
+          if [ -f client/branding.json ]; then
+            NAME=$(jq -r '.ProductName // "Endpoint Toolkit"' client/branding.json)
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building version: $VERSION"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Building $NAME version: $VERSION"
+
+      - name: Validate client overlay
+        if: hashFiles('client/**') != ''
+        shell: pwsh
+        run: ./tools/Test-ClientOverlay.ps1
 
       - name: Check for existing release
         id: exists
@@ -35,13 +53,14 @@ jobs:
         run: |
           if gh release view "v${{ steps.version.outputs.version }}" > /dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release v${{ steps.version.outputs.version }} already exists - bump dependencies/version.txt to publish a new one."
+            echo "Release v${{ steps.version.outputs.version }} already exists - bump the version file to publish a new one."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create clean zip
         if: steps.exists.outputs.exists == 'false'
+        # Repo-only exclusions mirror Get-ToolkitPayloadExcludes in dependencies/Core/ClientOverlay.ps1
         run: |
           zip -r latest.zip . \
             -x ".git/*" \
@@ -50,6 +69,11 @@ jobs:
             -x ".gitignore" \
             -x ".gitattributes" \
             -x "README.md" \
+            -x "AGENTS.md" \
+            -x "CLAUDE.md" \
+            -x "CLIENT_GUIDE.md" \
+            -x "tools/*" \
+            -x "client.example/*" \
             -x "*.key" \
             -x "build.ps1" \
             -x ".vscode/*" \
@@ -59,7 +83,7 @@ jobs:
         if: steps.exists.outputs.exists == 'false'
         run: |
           sha256sum latest.zip | awk '{print $1}' > latest.sha256
-          cp dependencies/version.txt version.txt
+          echo "${{ steps.version.outputs.version }}" > version.txt
           echo "SHA-256: $(cat latest.sha256)"
 
       - name: Publish GitHub Release
@@ -70,7 +94,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           gh release create "v${VERSION}" latest.zip latest.sha256 version.txt \
             --target "${{ github.sha }}" \
-            --title "v${VERSION}" \
+            --title "${{ steps.version.outputs.name }} v${VERSION}" \
             --generate-notes \
             --latest
           echo "Published v${VERSION}"

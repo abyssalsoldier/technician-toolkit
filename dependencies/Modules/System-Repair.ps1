@@ -39,7 +39,7 @@ function Get-SystemRepairUI {
     $header.Text = 'System Repair'
     $header.FontSize = 22
     $header.FontWeight = 'Bold'
-    $header.Foreground = & $brush '#89B4FA'
+    $header.Foreground = & $brush (Get-ToolkitAccent)
     $header.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
     $panel.Children.Add($header) | Out-Null
 
@@ -73,7 +73,7 @@ function Get-SystemRepairUI {
     $dismBtn   = & $mkBtn 'Run DISM (RestoreHealth)'
     $sfcBtn    = & $mkBtn 'Run SFC (/scannow)'
     $bothBtn   = & $mkBtn 'Run Both (DISM then SFC)'
-    $bothBtn.Background = & $brush '#89B4FA'
+    $bothBtn.Background = & $brush (Get-ToolkitAccent)
     $bothBtn.Foreground = & $brush '#1E1E2E'
     $bothBtn.FontWeight = 'Bold'
     $cancelBtn = & $mkBtn 'Cancel'

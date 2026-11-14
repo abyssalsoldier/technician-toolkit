@@ -26,7 +26,7 @@ function Get-ComputerManagementUI {
     $header.FontSize = 22
     $header.FontWeight = 'Bold'
     $header.Foreground = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $header.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
     $panel.Children.Add($header) | Out-Null
 
@@ -124,7 +124,7 @@ function Get-ComputerManagementUI {
     $renameBtn.Content = 'Rename'
     $renameBtn.Padding = [System.Windows.Thickness]::new(16, 4, 16, 4)
     $renameBtn.Background = New-Object System.Windows.Media.SolidColorBrush(
-        [System.Windows.Media.ColorConverter]::ConvertFromString('#89B4FA'))
+        [System.Windows.Media.ColorConverter]::ConvertFromString((Get-ToolkitAccent)))
     $renameBtn.Foreground = New-Object System.Windows.Media.SolidColorBrush(
         [System.Windows.Media.ColorConverter]::ConvertFromString('#1E1E2E'))
     $newNameRow.Children.Add($renameBtn) | Out-Null

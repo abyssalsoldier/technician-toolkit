@@ -100,7 +100,10 @@
         <!-- ============ TITLE BAR ============ -->
         <Border Grid.Row="0" Background="#FF181825" BorderBrush="{StaticResource PanelBorder}" BorderThickness="0,0,0,1">
             <DockPanel Margin="16,0">
-                <TextBlock Text="Endpoint Toolkit" FontSize="18" FontWeight="Bold"
+                <!-- Client logo (client\branding.json "Logo"); hidden for core builds -->
+                <Image Name="imgLogo" Height="28" MaxWidth="160" Margin="0,0,10,0" Stretch="Uniform"
+                       VerticalAlignment="Center" DockPanel.Dock="Left" Visibility="Collapsed"/>
+                <TextBlock Name="txtProductName" Text="Endpoint Toolkit" FontSize="18" FontWeight="Bold"
                            Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
                            DockPanel.Dock="Left"/>
                 <TextBlock Name="txtVersion" Text="v1.0.0" FontSize="13"
