@@ -8,7 +8,6 @@ function Initialize-SessionLog {
         ScriptVersion  = $script:Toolkit.Version
         ModulesRun     = [System.Collections.ArrayList]::new()
         Errors         = [System.Collections.ArrayList]::new()
-        ConnectWise    = @{ Client = $null; Site = $null }
     }
 }
 
@@ -54,11 +53,6 @@ function Get-SessionReport {
     $report += "Session End    : $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))"
     $report += "Duration       : $($duration.ToString('hh\:mm\:ss'))"
     $report += ""
-
-    if ($log.ConnectWise.Client) {
-        $report += "ConnectWise    : $($log.ConnectWise.Client) / $($log.ConnectWise.Site)"
-        $report += ""
-    }
 
     $report += "--- Modules Executed ---"
     $report += ""

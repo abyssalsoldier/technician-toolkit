@@ -6,8 +6,9 @@ $ErrorActionPreference = "Stop"
 $scriptDir = $PSScriptRoot
 $toolkitRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 
-# Load Crypto module
+# Load Crypto module (+ ConvertTo-RobocopyPathArg from UsbDetection)
 . (Join-Path $toolkitRoot "dependencies\Core\Crypto.ps1")
+. (Join-Path $toolkitRoot "dependencies\Core\UsbDetection.ps1")
 
 Write-Host "=== Export Locked Toolkit ===" -ForegroundColor Cyan
 Write-Host "This will package the current toolkit folder into a standalone .exe file."
@@ -35,8 +36,8 @@ $tempStaging = Join-Path $env:TEMP "ToolkitExport_$(Get-Date -Format 'yyyyMMdd_H
 New-Item -ItemType Directory -Path $tempStaging -Force | Out-Null
 
 $robocopyArgs = @(
-    "`"$toolkitRoot`"",
-    "`"$tempStaging`"",
+    (ConvertTo-RobocopyPathArg $toolkitRoot),
+    (ConvertTo-RobocopyPathArg $tempStaging),
     '/MIR',
     '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', '_builds',
     '/XF', '.gitignore', 'Export-LockedToolkit.ps1', '.toolkit-key', 'build.ps1',

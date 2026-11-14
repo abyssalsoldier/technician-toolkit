@@ -1,5 +1,8 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        Title="Toolkit Authentication" Height="220" Width="420"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Toolkit Authentication" SizeToContent="Height" Width="420"
+        MaxHeight="{x:Static SystemParameters.MaximizedPrimaryScreenHeight}"
+        MaxWidth="{x:Static SystemParameters.MaximizedPrimaryScreenWidth}"
         WindowStartupLocation="CenterScreen" Background="#FF1E1E2E"
         Foreground="#FFCDD6F4" ResizeMode="NoResize"
         WindowStyle="ToolWindow" Topmost="True">

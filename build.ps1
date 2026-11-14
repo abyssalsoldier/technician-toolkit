@@ -16,6 +16,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function ConvertTo-RobocopyPathArg {
+    param([string]$Path)
+    # A path ending in "\" placed right before the closing quote is parsed by
+    # Win32 argv rules as an escaped quote, not a literal backslash — this
+    # merges the rest of the command line into the path (breaks on drive roots
+    # like "D:\"). Doubling the trailing backslash keeps it literal.
+    if ($Path.EndsWith('\')) {
+        return '"' + $Path + '\"'
+    }
+    return '"' + $Path + '"'
+}
+
 $repoRoot = $PSScriptRoot
 $buildsRoot = Join-Path $repoRoot "_builds"
 
@@ -36,16 +48,15 @@ New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 
 # Common robocopy exclusions (mirrors release.yml)
 $robocopyExcludeDirs = @(".git", ".github", ".claude", ".vscode", "_builds")
-$robocopyExcludeFiles = @(".gitignore", ".gitattributes", "README.md", "build.ps1",
-    "Protect-Credentials.ps1", "toolkit-config.json", "clients.csv")
+$robocopyExcludeFiles = @(".gitignore", ".gitattributes", "README.md", "build.ps1")
 
 if ($Dev -or $Test) {
     # --- Dev mode: copy files directly, no zip ---
     $outputPath = $buildDir
 
     $robocopyArgs = @(
-        "`"$repoRoot`"",
-        "`"$outputPath`"",
+        (ConvertTo-RobocopyPathArg $repoRoot),
+        (ConvertTo-RobocopyPathArg $outputPath),
         "/MIR",
         "/XD") + $robocopyExcludeDirs + @("/XF") + $robocopyExcludeFiles + @(
         "/NFL", "/NDL", "/NJH", "/NJS",
@@ -89,8 +100,8 @@ if ($Dev -or $Test) {
     New-Item -ItemType Directory -Path $tempStaging -Force | Out-Null
 
     $robocopyArgs = @(
-        "`"$repoRoot`"",
-        "`"$tempStaging`"",
+        (ConvertTo-RobocopyPathArg $repoRoot),
+        (ConvertTo-RobocopyPathArg $tempStaging),
         "/MIR",
         "/XD") + $robocopyExcludeDirs + @("/XF") + $robocopyExcludeFiles + @(
         "/NFL", "/NDL", "/NJH", "/NJS",

@@ -9,6 +9,37 @@ function Load-XamlWindow {
     return [System.Windows.Markup.XamlReader]::Load($reader)
 }
 
+function Set-WindowForWorkArea {
+    # Clamps the main window to the primary screen's work area (excludes the taskbar) and
+    # tightens the layout on small screens, e.g. 1366x768, or 1920x1080 at 150% scaling.
+    param([System.Windows.Window]$Window)
+
+    $wa = [System.Windows.SystemParameters]::WorkArea
+
+    $Window.MinWidth  = [Math]::Min($Window.MinWidth,  $wa.Width)
+    $Window.MinHeight = [Math]::Min($Window.MinHeight, $wa.Height)
+    $Window.Width     = [Math]::Min($Window.Width,  $wa.Width)
+    $Window.Height    = [Math]::Min($Window.Height, $wa.Height)
+    $Window.MaxWidth  = $wa.Width
+    $Window.MaxHeight = $wa.Height
+
+    # CenterScreen ignores the taskbar, so center within the work area manually
+    $Window.WindowStartupLocation = 'Manual'
+    $Window.Left = $wa.Left + [Math]::Max(0, ($wa.Width  - $Window.Width)  / 2)
+    $Window.Top  = $wa.Top  + [Math]::Max(0, ($wa.Height - $Window.Height) / 2)
+
+    $rootGrid = $Window.FindName('RootGrid')
+    $mainGrid = $Window.FindName('MainContentGrid')
+    if ($wa.Height -lt 800 -and $rootGrid) {
+        # Give the module area more room: shorter log panel (still resizable via the splitter)
+        $rootGrid.RowDefinitions[3].Height = [System.Windows.GridLength]::new(110)
+    }
+    if ($wa.Width -lt 1100 -and $mainGrid) {
+        $mainGrid.ColumnDefinitions[0].Width    = [System.Windows.GridLength]::new(180)
+        $mainGrid.ColumnDefinitions[0].MinWidth = 150
+    }
+}
+
 function Start-ToolkitGUI {
     # Load WPF assemblies
     Add-Type -AssemblyName PresentationFramework
@@ -188,6 +219,9 @@ function Start-ToolkitGUI {
     $Global:SyncHash.NavList.SelectedIndex = 0
     Load-Dashboard
 
+    # --- Fit to the screen's usable area (small laptops / high DPI scaling) ---
+    Set-WindowForWorkArea -Window $window
+
     # --- Show window (blocks until closed) ---
     $window.ShowDialog() | Out-Null
 
@@ -287,7 +321,7 @@ function Show-AuthDialog {
         } elseif ($Global:SyncHash.Toolkit.IsUsb -and $hasUsbCache) {
             try {
                 $driveLetter = $Global:SyncHash.Toolkit.UsbDrive
-                $usbSerial = Get-DriveSerial -DriveLetter $driveLetter
+                $usbSerial = Get-ToolkitUsbSerial -Toolkit $Global:SyncHash.Toolkit
                 if ($usbSerial) {
                     $encryptedCache = (Get-Content $cachedKeyPath -Raw).Trim()
                     $mainKeyToUse = Unprotect-CachedPassword -EncryptedData $encryptedCache -DriveSerial $usbSerial -UserPassword $enteredKey

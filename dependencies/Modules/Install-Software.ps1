@@ -21,6 +21,8 @@ function Get-WingetPackageCatalog {
         @{ Category = 'Productivity';   Name = 'Adobe Acrobat Reader 32-bit';Id = 'Adobe.Acrobat.Reader.32-bit';          Source = 'winget' }
         @{ Category = 'Productivity';   Name = 'Adobe Acrobat Pro';          Id = 'Adobe.Acrobat.Pro';                    Source = 'winget' }
         @{ Category = 'Productivity';   Name = 'Microsoft Office';           Id = 'Microsoft.Office';                     Source = 'winget' }
+        @{ Category = 'Productivity';   Name = 'Bluebeam Revu';              Id = 'Bluebeam.Revu.21';                     Source = 'winget' }
+        @{ Category = 'Productivity';   Name = 'Egnyte Desktop App';         Id = 'Egnyte.EgnyteDesktopApp';              Source = 'winget' }
         @{ Category = 'Productivity';   Name = '7-Zip';                      Id = '7zip.7zip';                            Source = 'winget' }
         @{ Category = 'Productivity';   Name = 'Notepad++';                  Id = 'Notepad++.Notepad++';                  Source = 'winget' }
         @{ Category = 'Productivity';   Name = 'VLC Media Player';           Id = 'VideoLAN.VLC';                         Source = 'winget' }
@@ -28,6 +30,7 @@ function Get-WingetPackageCatalog {
         @{ Category = 'Communication';  Name = 'Zoom';                       Id = 'Zoom.Zoom';                            Source = 'winget' }
         @{ Category = 'Communication';  Name = 'Slack';                      Id = 'SlackTechnologies.Slack';              Source = 'winget' }
         @{ Category = 'Communication';  Name = 'RingCentral';                Id = 'RingCentral.RingCentral';              Source = 'winget' }
+        @{ Category = 'Communication';  Name = 'Dialpad';                    Id = 'Dialpad.Dialpad';                      Source = 'winget' }
         @{ Category = 'Runtimes';       Name = '.NET Desktop Runtime 8';     Id = 'Microsoft.DotNet.DesktopRuntime.8';    Source = 'winget' }
         @{ Category = 'Runtimes';       Name = 'VC++ Redistributable 2015+'; Id = 'Microsoft.VCRedist.2015+.x64';         Source = 'winget' }
         @{ Category = 'Utilities';      Name = 'PowerShell 7';              Id = 'Microsoft.PowerShell';                  Source = 'winget' }
@@ -259,7 +262,7 @@ function Get-SoftwareManagerUI {
     if ($Global:SyncHash.Toolkit.Root) {
         $customDir = Join-Path $Global:SyncHash.Toolkit.Root 'CustomInstallers'
         if (Test-Path $customDir) {
-            $localFiles = Get-ChildItem -Path $customDir -Include '*.exe', '*.msi' -Recurse -File | Where-Object { $_.Directory.Name -ne 'Agent_Uninstaller' }
+            $localFiles = Get-ChildItem -Path $customDir -Include '*.exe', '*.msi' -Recurse -File | Where-Object { $_.Directory.Name -ne 'ODT' }  # ODT is used by Windows-Debloat, not an app
             foreach ($file in $localFiles) {
                 $subDir = if ($file.DirectoryName -eq $customDir) { '' } else { " [$($file.Directory.Name)]" }
                 $displayName = "$($file.Name)$subDir"
@@ -269,7 +272,7 @@ function Get-SoftwareManagerUI {
     }
 
     # Buttons row
-    $btnRow = New-Object System.Windows.Controls.StackPanel
+    $btnRow = New-Object System.Windows.Controls.WrapPanel
     $btnRow.Orientation = 'Horizontal'
     $btnRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 12)
 

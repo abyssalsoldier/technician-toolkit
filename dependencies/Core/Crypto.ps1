@@ -42,6 +42,13 @@ function Get-DriveSerial {
     return $null
 }
 
+function Get-ToolkitUsbSerial {
+    # Prefer the serial captured at launch so the USB can be unplugged after startup
+    param($Toolkit)
+    if ($Toolkit.UsbSerial) { return $Toolkit.UsbSerial }
+    return Get-DriveSerial -DriveLetter $Toolkit.UsbDrive
+}
+
 function Protect-CachedPassword {
     param([string]$Password, [string]$DriveSerial, [string]$UserPassword = '')
     $salt = [System.Text.Encoding]::UTF8.GetBytes("ToolkitUSB:$DriveSerial")

@@ -85,7 +85,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <Grid Name="RootGrid">
         <Grid.RowDefinitions>
             <!-- Title bar -->
             <RowDefinition Height="50"/>
@@ -116,7 +116,7 @@
         </Border>
 
         <!-- ============ MAIN CONTENT ============ -->
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="1" Name="MainContentGrid">
             <Grid.ColumnDefinitions>
                 <!-- Nav panel -->
                 <ColumnDefinition Width="220" MinWidth="160"/>
@@ -131,26 +131,28 @@
                     <!-- Bottom buttons: Session Report + Quit -->
                     <StackPanel DockPanel.Dock="Bottom" Margin="10,0,10,10">
                         <Separator Background="{StaticResource PanelBorder}" Margin="0,0,0,8"/>
-                        <Button Name="btnUsbToolkit" Content="USB Toolkit" Margin="0,0,0,6"
+                        <Button Name="btnUsbToolkit" Content="USB Toolkit" Margin="0,0,0,4" Padding="12,6"
                                 HorizontalAlignment="Stretch"/>
-                        <Button Name="btnSessionReport" Content="Session Report" Margin="0,0,0,6"
+                        <Button Name="btnSessionReport" Content="Session Report" Margin="0,0,0,4" Padding="12,6"
                                 HorizontalAlignment="Stretch"/>
-                        <Button Name="btnQuit" Content="Quit" HorizontalAlignment="Stretch"
+                        <Button Name="btnQuit" Content="Quit" HorizontalAlignment="Stretch" Padding="12,6"
                                 Background="#FF45243D" Foreground="{StaticResource ErrorBrush}"/>
                     </StackPanel>
 
-                    <!-- Module list -->
-                    <StackPanel Margin="10,10,10,0">
-                        <TextBlock Text="MODULES" FontSize="11" FontWeight="Bold"
+                    <!-- Module list: fills the remaining height and scrolls when it does not fit -->
+                    <DockPanel Margin="10,10,10,0">
+                        <TextBlock Text="MODULES" FontSize="11" FontWeight="Bold" DockPanel.Dock="Top"
                                    Foreground="{StaticResource TextSecondary}" Margin="6,0,0,8"/>
                         <ListBox Name="lstModules" Background="Transparent" BorderThickness="0"
-                                 Foreground="{StaticResource TextPrimary}" FontSize="14">
+                                 Foreground="{StaticResource TextPrimary}" FontSize="14"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.Resources>
                                 <Style TargetType="ListBoxItem">
                                     <Setter Property="Background" Value="Transparent"/>
                                     <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-                                    <Setter Property="Padding" Value="12,10"/>
-                                    <Setter Property="Margin" Value="0,2"/>
+                                    <Setter Property="Padding" Value="12,8"/>
+                                    <Setter Property="Margin" Value="0,1"/>
                                     <Setter Property="Cursor" Value="Hand"/>
                                     <Setter Property="Template">
                                         <Setter.Value>
@@ -178,13 +180,13 @@
                                 </Style>
                             </ListBox.Resources>
                         </ListBox>
-                    </StackPanel>
+                    </DockPanel>
                 </DockPanel>
             </Border>
 
             <!-- ACTION PANEL -->
             <Border Grid.Column="1" Margin="0">
-                <ContentControl Name="ActionContent" Margin="24,20">
+                <ContentControl Name="ActionContent" Margin="20,16">
                     <!-- Default placeholder -->
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                         <TextBlock Text="Select a module from the list" FontSize="16"

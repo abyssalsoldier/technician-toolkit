@@ -53,7 +53,7 @@ function Initialize-ToolkitAuth {
         } elseif ($script:Toolkit.IsUsb -and $hasUsbCache) {
             try {
                 $driveLetter = $script:Toolkit.UsbDrive
-                $usbSerial = Get-DriveSerial -DriveLetter $driveLetter
+                $usbSerial = Get-ToolkitUsbSerial -Toolkit $script:Toolkit
                 if ($usbSerial) {
                     $encryptedCache = (Get-Content $cachedKeyPath -Raw).Trim()
                     $mainKeyToUse = Unprotect-CachedPassword -EncryptedData $encryptedCache -DriveSerial $usbSerial -UserPassword $enteredKey

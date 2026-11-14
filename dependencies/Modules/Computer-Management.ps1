@@ -546,19 +546,166 @@ function Get-ComputerManagementUI {
         }
     }.GetNewClosure())
 
+    # ===== TIME & DATE =====
+    $timeSectionLabel = New-Object System.Windows.Controls.Label
+    $timeSectionLabel.Content = 'TIME & DATE'
+    $timeSectionLabel.FontWeight = 'Bold'
+    $timeSectionLabel.Margin = [System.Windows.Thickness]::new(0, 0, 0, 4)
+    $panel.Children.Add($timeSectionLabel) | Out-Null
+
+    $timeDesc = New-Object System.Windows.Controls.TextBlock
+    $timeDesc.Text = 'Set the time zone and choose where this device syncs its time from.'
+    $timeDesc.FontSize = 13
+    $timeDesc.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+        [System.Windows.Media.ColorConverter]::ConvertFromString('#A6ADC8'))
+    $timeDesc.Margin = [System.Windows.Thickness]::new(0, 4, 0, 10)
+    $timeDesc.TextWrapping = 'Wrap'
+    $panel.Children.Add($timeDesc) | Out-Null
+
+    # --- Time Zone ---
+    $currentTz = Get-TimeZone
+    $tzCurrentValue = New-Object System.Windows.Controls.TextBlock
+    $tzCurrentValue.Text = "Current time zone: $($currentTz.DisplayName)"
+    $tzCurrentValue.FontSize = 14
+    $tzCurrentValue.FontWeight = 'Bold'
+    $tzCurrentValue.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
+    $tzCurrentValue.TextWrapping = 'Wrap'
+    $panel.Children.Add($tzCurrentValue) | Out-Null
+
+    $tzRow = New-Object System.Windows.Controls.Grid
+    $tzRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 12)
+    $tzRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width = [System.Windows.GridLength]::new(100) }))
+    $tzRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }))
+    $tzRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width = [System.Windows.GridLength]::Auto }))
+
+    $tzLabel = New-Object System.Windows.Controls.TextBlock; $tzLabel.Text = 'Time Zone:'; $tzLabel.VerticalAlignment = 'Center'
+    $tzCombo = New-Object System.Windows.Controls.ComboBox; $tzCombo.Height = 28; $tzCombo.VerticalContentAlignment = 'Center'
+    foreach ($tz in (Get-TimeZone -ListAvailable | Sort-Object BaseUtcOffset, DisplayName)) {
+        $item = New-Object System.Windows.Controls.ComboBoxItem
+        $item.Content = $tz.DisplayName
+        $item.Tag = $tz.Id
+        $tzCombo.Items.Add($item) | Out-Null
+        if ($tz.Id -eq $currentTz.Id) { $tzCombo.SelectedItem = $item }
+    }
+    $tzApplyBtn = New-Object System.Windows.Controls.Button
+    $tzApplyBtn.Content = 'Apply'
+    $tzApplyBtn.Padding = [System.Windows.Thickness]::new(16, 4, 16, 4)
+    $tzApplyBtn.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+    [System.Windows.Controls.Grid]::SetColumn($tzLabel, 0); $tzRow.Children.Add($tzLabel) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($tzCombo, 1); $tzRow.Children.Add($tzCombo) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($tzApplyBtn, 2); $tzRow.Children.Add($tzApplyBtn) | Out-Null
+    $panel.Children.Add($tzRow) | Out-Null
+
+    $tzPreview = New-Object System.Windows.Controls.TextBlock
+    $tzPreview.FontSize = 13
+    $tzPreview.TextWrapping = 'Wrap'
+    $tzPreview.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+        [System.Windows.Media.ColorConverter]::ConvertFromString('#A6ADC8'))
+    $tzPreview.Margin = [System.Windows.Thickness]::new(100, -6, 0, 12)
+    $panel.Children.Add($tzPreview) | Out-Null
+
+    $updateTzPreview = {
+        $sel = $tzCombo.SelectedItem
+        if (-not $sel) { $tzPreview.Text = ''; return }
+        try {
+            $utcNow = [DateTime]::UtcNow
+            $fmt = 'ddd MMM d, h:mm:ss tt'
+            $newTime = [TimeZoneInfo]::ConvertTimeFromUtc($utcNow, [TimeZoneInfo]::FindSystemTimeZoneById($sel.Tag))
+            $nowTime = [TimeZoneInfo]::ConvertTimeFromUtc($utcNow, [TimeZoneInfo]::FindSystemTimeZoneById($Global:SyncHash.CmTzCurrentId))
+            $tzPreview.Text = "Now: $($nowTime.ToString($fmt))   ->   After applying: $($newTime.ToString($fmt))"
+        } catch {
+            $tzPreview.Text = ''
+        }
+    }.GetNewClosure()
+
+    $Global:SyncHash.CmTzCurrentId = $currentTz.Id
+    $tzCombo.Add_SelectionChanged($updateTzPreview)
+    $tzPreviewTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $tzPreviewTimer.Interval = [TimeSpan]::FromSeconds(1)
+    $tzPreviewTimer.Add_Tick($updateTzPreview)
+    $tzPreviewTimer.Start()
+    $tzRow.Add_Unloaded({ $tzPreviewTimer.Stop() }.GetNewClosure())
+    & $updateTzPreview
+
+    # --- Time Source ---
+    $currentTimeSource = 'Unknown'
+    try {
+        if ((Get-Service -Name W32Time -ErrorAction Stop).Status -ne 'Running') {
+            $currentTimeSource = 'Windows Time service is not running (it will be started when you Apply or Sync)'
+        } else {
+            $queried = (& w32tm.exe /query /source 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0 -and $queried) { $currentTimeSource = $queried }
+        }
+    } catch { }
+
+    $tsCurrentValue = New-Object System.Windows.Controls.TextBlock
+    $tsCurrentValue.Text = "Current time source: $currentTimeSource"
+    $tsCurrentValue.FontSize = 14
+    $tsCurrentValue.FontWeight = 'Bold'
+    $tsCurrentValue.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
+    $tsCurrentValue.TextWrapping = 'Wrap'
+    $panel.Children.Add($tsCurrentValue) | Out-Null
+
+    $tsRow = New-Object System.Windows.Controls.Grid
+    $tsRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 12)
+    $tsRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width = [System.Windows.GridLength]::new(100) }))
+    $tsRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }))
+    $tsRow.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width = [System.Windows.GridLength]::Auto }))
+
+    $tsLabel = New-Object System.Windows.Controls.TextBlock; $tsLabel.Text = 'Sync From:'; $tsLabel.VerticalAlignment = 'Center'
+    $tsCombo = New-Object System.Windows.Controls.ComboBox; $tsCombo.Height = 28; $tsCombo.VerticalContentAlignment = 'Center'; $tsCombo.IsEditable = $true
+    $tsCombo.ToolTip = 'Pick a preset or type a custom NTP server (separate multiple servers with spaces).'
+    foreach ($src in @('Domain hierarchy (domain controller)', 'time.windows.com', 'pool.ntp.org', 'time.nist.gov', 'time.google.com')) {
+        $tsCombo.Items.Add($src) | Out-Null
+    }
+    $tsCombo.SelectedIndex = 1
+    $tsApplyBtn = New-Object System.Windows.Controls.Button
+    $tsApplyBtn.Content = 'Apply'
+    $tsApplyBtn.Padding = [System.Windows.Thickness]::new(16, 4, 16, 4)
+    $tsApplyBtn.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+    [System.Windows.Controls.Grid]::SetColumn($tsLabel, 0); $tsRow.Children.Add($tsLabel) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($tsCombo, 1); $tsRow.Children.Add($tsCombo) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($tsApplyBtn, 2); $tsRow.Children.Add($tsApplyBtn) | Out-Null
+    $panel.Children.Add($tsRow) | Out-Null
+
+    # --- Actions ---
+    $timeActionRow = New-Object System.Windows.Controls.WrapPanel
+    $timeActionRow.Orientation = 'Horizontal'
+    $timeActionRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 4)
+
+    $syncNowBtn = New-Object System.Windows.Controls.Button
+    $syncNowBtn.Content = 'Sync Time Now'
+    $syncNowBtn.Padding = [System.Windows.Thickness]::new(16, 4, 16, 4)
+    $syncNowBtn.Margin = [System.Windows.Thickness]::new(0, 0, 8, 0)
+    $timeActionRow.Children.Add($syncNowBtn) | Out-Null
+
+    $timeDateBtn = New-Object System.Windows.Controls.Button
+    $timeDateBtn.Content = 'Date and Time Settings'
+    $timeDateBtn.Padding = [System.Windows.Thickness]::new(16, 4, 16, 4)
+    $timeActionRow.Children.Add($timeDateBtn) | Out-Null
+    $panel.Children.Add($timeActionRow) | Out-Null
+
+    $timeStatusText = New-Object System.Windows.Controls.TextBlock
+    $timeStatusText.FontSize = 13
+    $timeStatusText.TextWrapping = 'Wrap'
+    $timeStatusText.Margin = [System.Windows.Thickness]::new(0, 4, 0, 24)
+    $panel.Children.Add($timeStatusText) | Out-Null
+
+    $Global:SyncHash.CmTzCurrentValue = $tzCurrentValue
+    $Global:SyncHash.CmTzCombo = $tzCombo
+    $Global:SyncHash.CmTzApplyBtn = $tzApplyBtn
+    $Global:SyncHash.CmTsCurrentValue = $tsCurrentValue
+    $Global:SyncHash.CmTsCombo = $tsCombo
+    $Global:SyncHash.CmTsApplyBtn = $tsApplyBtn
+    $Global:SyncHash.CmSyncNowBtn = $syncNowBtn
+    $Global:SyncHash.CmTimeStatusText = $timeStatusText
+
     # ===== SYSTEM TOOLS =====
     $sysToolsLabel = New-Object System.Windows.Controls.Label
     $sysToolsLabel.Content = 'SYSTEM TOOLS'
     $sysToolsLabel.FontWeight = 'Bold'
     $sysToolsLabel.Margin = [System.Windows.Thickness]::new(0, 0, 0, 4)
     $panel.Children.Add($sysToolsLabel) | Out-Null
-
-    $timeDateBtn = New-Object System.Windows.Controls.Button
-    $timeDateBtn.Content = 'Date and Time Settings'
-    $timeDateBtn.Padding = [System.Windows.Thickness]::new(16, 4, 16, 4)
-    $timeDateBtn.HorizontalAlignment = 'Left'
-    $timeDateBtn.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
-    $panel.Children.Add($timeDateBtn) | Out-Null
 
     $clearSpoolerBtn = New-Object System.Windows.Controls.Button
     $clearSpoolerBtn.Content = 'Clear Print Spooler'
@@ -571,6 +718,181 @@ function Get-ComputerManagementUI {
     $timeDateBtn.Add_Click({
         Write-Log "Opening Date and Time Settings (timedate.cpl)." -Level Info
         Start-Process "timedate.cpl"
+    }.GetNewClosure())
+
+    $tzApplyBtn.Add_Click({
+        $selected = $Global:SyncHash.CmTzCombo.SelectedItem
+        if (-not $selected) {
+            $Global:SyncHash.CmTimeStatusText.Text = 'Please select a time zone.'
+            $Global:SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+                [System.Windows.Media.ColorConverter]::ConvertFromString('#F38BA8'))
+            return
+        }
+
+        $entry = @{
+            Name = 'Set-TimeZone'; Label = 'Set Time Zone'
+            StartTime = Get-Date; EndTime = $null; Status = 'Success'; Detail = "Time Zone: $($selected.Tag)"
+        }
+        try {
+            Set-TimeZone -Id $selected.Tag -ErrorAction Stop
+            $Global:SyncHash.CmTzCurrentId = $selected.Tag
+            $Global:SyncHash.CmTzCurrentValue.Text = "Current time zone: $($selected.Content)"
+            $Global:SyncHash.CmTimeStatusText.Text = "Time zone set to $($selected.Content)."
+            $Global:SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+                [System.Windows.Media.ColorConverter]::ConvertFromString('#A6E3A1'))
+            Write-Log "Time zone set to $($selected.Tag)." -Level Success
+        } catch {
+            $entry.Status = 'Error'
+            $entry.Detail = $_.Exception.Message
+            $Global:SyncHash.CmTimeStatusText.Text = "Failed to set time zone: $($_.Exception.Message)"
+            $Global:SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+                [System.Windows.Media.ColorConverter]::ConvertFromString('#F38BA8'))
+            Write-Log "Failed to set time zone: $($_.Exception.Message)" -Level Error
+        }
+        $entry.EndTime = Get-Date
+        if ($Global:SyncHash.Toolkit.Session) {
+            $Global:SyncHash.Toolkit.Session.ModulesRun.Add($entry) | Out-Null
+        }
+    }.GetNewClosure())
+
+    $tsApplyBtn.Add_Click({
+        $sourceText = $Global:SyncHash.CmTsCombo.Text.Trim()
+        if ([string]::IsNullOrEmpty($sourceText)) {
+            $Global:SyncHash.CmTimeStatusText.Text = 'Please choose or enter a time source.'
+            $Global:SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+                [System.Windows.Media.ColorConverter]::ConvertFromString('#F38BA8'))
+            return
+        }
+
+        $Global:SyncHash.CmTsApplyBtn.IsEnabled = $false
+        $Global:SyncHash.CmSyncNowBtn.IsEnabled = $false
+        $Global:SyncHash.CmTimeStatusText.Text = 'Updating time source...'
+        $Global:SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+            [System.Windows.Media.ColorConverter]::ConvertFromString('#A6ADC8'))
+
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.ApartmentState = 'STA'
+        $rs.Open()
+        $rs.SessionStateProxy.SetVariable('SyncHash', $Global:SyncHash)
+        $rs.SessionStateProxy.SetVariable('TimeSource', $sourceText)
+
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        $ps.AddScript({
+            $toolkitRoot = $SyncHash.Toolkit.Root
+            Get-ChildItem -Path "$toolkitRoot\Core" -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
+            Get-ChildItem -Path "$toolkitRoot\UI" -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
+
+            $entry = @{
+                Name = 'Set-TimeSource'; Label = 'Set Time Source'
+                StartTime = Get-Date; EndTime = $null; Status = 'Success'; Detail = "Source: $TimeSource"
+            }
+            try {
+                $svc = Get-Service -Name W32Time -ErrorAction Stop
+                if ($svc.StartType -ne 'Automatic') { Set-Service -Name W32Time -StartupType Automatic -ErrorAction Stop }
+                if ($svc.Status -ne 'Running') { Start-Service -Name W32Time -ErrorAction Stop }
+
+                if ($TimeSource -like 'Domain hierarchy*') {
+                    $out = & w32tm.exe /config /syncfromflags:domhier /update 2>&1 | Out-String
+                } else {
+                    $peers = ($TimeSource -split '[\s,;]+' | Where-Object { $_ } | ForEach-Object {
+                        if ($_ -match ',0x[0-9a-fA-F]+$') { $_ } else { "$_,0x9" }
+                    }) -join ' '
+                    $out = & w32tm.exe /config /manualpeerlist:"$peers" /syncfromflags:manual /reliable:no /update 2>&1 | Out-String
+                }
+                if ($LASTEXITCODE -ne 0) { throw "w32tm config failed: $($out.Trim())" }
+
+                & w32tm.exe /resync /force 2>&1 | Out-Null
+                $newSource = (& w32tm.exe /query /source 2>&1 | Out-String).Trim()
+
+                Write-Log "Time source set to '$TimeSource' (now: $newSource)." -Level Success
+                $SyncHash.Window.Dispatcher.Invoke([action]{
+                    $SyncHash.CmTsCurrentValue.Text = "Current time source: $newSource"
+                    $SyncHash.CmTimeStatusText.Text = "Time source updated to '$TimeSource'."
+                    $SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+                        [System.Windows.Media.ColorConverter]::ConvertFromString('#A6E3A1'))
+                })
+            } catch {
+                Write-Log "Failed to set time source: $($_.Exception.Message)" -Level Error
+                $entry.Status = 'Error'
+                $entry.Detail = $_.Exception.Message
+                $SyncHash.Window.Dispatcher.Invoke([action]{
+                    $SyncHash.CmTimeStatusText.Text = "Failed to set time source: $($_.Exception.Message)"
+                    $SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+                        [System.Windows.Media.ColorConverter]::ConvertFromString('#F38BA8'))
+                })
+            } finally {
+                $entry.EndTime = Get-Date
+                $SyncHash.Window.Dispatcher.Invoke([action]{
+                    $SyncHash.CmTsApplyBtn.IsEnabled = $true
+                    $SyncHash.CmSyncNowBtn.IsEnabled = $true
+                    if ($SyncHash.Toolkit.Session) {
+                        $SyncHash.Toolkit.Session.ModulesRun.Add($entry) | Out-Null
+                    }
+                })
+            }
+        }) | Out-Null
+        $ps.BeginInvoke() | Out-Null
+    }.GetNewClosure())
+
+    $syncNowBtn.Add_Click({
+        $Global:SyncHash.CmSyncNowBtn.IsEnabled = $false
+        $Global:SyncHash.CmTsApplyBtn.IsEnabled = $false
+        $Global:SyncHash.CmTimeStatusText.Text = 'Syncing time...'
+        $Global:SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+            [System.Windows.Media.ColorConverter]::ConvertFromString('#A6ADC8'))
+
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.ApartmentState = 'STA'
+        $rs.Open()
+        $rs.SessionStateProxy.SetVariable('SyncHash', $Global:SyncHash)
+
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        $ps.AddScript({
+            $toolkitRoot = $SyncHash.Toolkit.Root
+            Get-ChildItem -Path "$toolkitRoot\Core" -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
+            Get-ChildItem -Path "$toolkitRoot\UI" -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
+
+            $entry = @{
+                Name = 'Sync-Time'; Label = 'Sync Time'
+                StartTime = Get-Date; EndTime = $null; Status = 'Success'; Detail = 'w32tm /resync /force'
+            }
+            try {
+                $svc = Get-Service -Name W32Time -ErrorAction Stop
+                if ($svc.StartType -ne 'Automatic') { Set-Service -Name W32Time -StartupType Automatic -ErrorAction Stop }
+                if ($svc.Status -ne 'Running') { Start-Service -Name W32Time -ErrorAction Stop }
+
+                $out =& w32tm.exe /resync /force 2>&1 | Out-String
+                if ($LASTEXITCODE -ne 0) { throw $out.Trim() }
+
+                Write-Log 'Time synchronized.' -Level Success
+                $SyncHash.Window.Dispatcher.Invoke([action]{
+                    $SyncHash.CmTimeStatusText.Text = 'Time synchronized successfully.'
+                    $SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+                        [System.Windows.Media.ColorConverter]::ConvertFromString('#A6E3A1'))
+                })
+            } catch {
+                Write-Log "Failed to sync time: $($_.Exception.Message)" -Level Error
+                $entry.Status = 'Error'
+                $entry.Detail = $_.Exception.Message
+                $SyncHash.Window.Dispatcher.Invoke([action]{
+                    $SyncHash.CmTimeStatusText.Text = "Failed to sync time: $($_.Exception.Message)"
+                    $SyncHash.CmTimeStatusText.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+                        [System.Windows.Media.ColorConverter]::ConvertFromString('#F38BA8'))
+                })
+            } finally {
+                $entry.EndTime = Get-Date
+                $SyncHash.Window.Dispatcher.Invoke([action]{
+                    $SyncHash.CmSyncNowBtn.IsEnabled = $true
+                    $SyncHash.CmTsApplyBtn.IsEnabled = $true
+                    if ($SyncHash.Toolkit.Session) {
+                        $SyncHash.Toolkit.Session.ModulesRun.Add($entry) | Out-Null
+                    }
+                })
+            }
+        }) | Out-Null
+        $ps.BeginInvoke() | Out-Null
     }.GetNewClosure())
 
     $clearSpoolerBtn.Add_Click({

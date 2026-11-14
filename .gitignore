@@ -2,10 +2,6 @@
 *.key
 .toolkit-key
 
-# Admin-only config sources (sensitive)
-dependencies/Agent/toolkit-config.json
-dependencies/Agent/clients.csv
-
 # OS / Editor
 Thumbs.db
 Desktop.ini

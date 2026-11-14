@@ -6,7 +6,8 @@ Welcome to the Endpoint Toolkit. This manual provides step-by-step instructions 
 
 1. **Launch the Toolkit:** Double-click the `Launch.bat` file.
    * If you are running the local base repository, it will open instantly.
-   * If you are running a distributed `.exe` or a USB portable toolkit, you will be prompted for a password. You have up to 3 attempts. Successfully authenticating unlocks the toolkit and its features.
+   * If you are running a distributed `.exe`, you will be prompted for a password. You have up to 3 attempts. Successfully authenticating unlocks the toolkit and its features.
+   * If you are running from a USB portable toolkit, Windows asks for the drive's BitLocker password when you plug it in. The toolkit then checks for updates, copies itself locally so you can unplug the USB, and prompts for the same password to unlock its features.
 2. **Navigation:** The toolkit interface consists of three main panels:
    * **Navigation Panel (Left):** Select modules to use (Dashboard, Software Manager, etc.), build a USB Toolkit, view the Session Report, or Quit.
    * **Action Panel (Center):** Displays the active module's interface (defaults to the Dashboard).
@@ -32,17 +33,51 @@ A unified software installer that pulls packages from Winget and local bundled i
 2. **Manual Selection:** Browse the categorized grids (Browsers, Productivity, etc.) and check/uncheck software manually as needed.
 3. **Execute:** Click **Install Selected Software**. The toolkit will batch install everything sequentially, providing progress updates in the log panel. If Winget is missing on the machine, it will automatically install it first.
 
+### 🧹 Debloat & Tweaks
+Cleans up a fresh or OEM Windows install.
+* **Pick items:** Tick items by category: bloatware apps (Xbox, Candy Crush, Clipchamp, etc.), McAfee trialware, telemetry and privacy (diagnostic data, advertising ID, Copilot, Recall), Start/taskbar/lock screen tweaks, USB selective suspend, Fast Startup/hibernation, and preinstalled Office products/languages. Use **Select All** or **Clear All** to speed this up.
+* **Run:** Click **Run Selected**. Progress and results appear in the log panel. Office removal uses the bundled Office Deployment Tool.
+
 ### 🖥️ Computer Management
-Simplifies renaming the workstation and joining it to a domain.
+Simplifies renaming the workstation, joining it to a domain, and setting the clock.
 * **Copy Serial Number:** Your current computer name and hardware serial number are displayed. Click the **Copy** button next to the serial number to quickly copy it to your clipboard for asset tracking.
 * **Rename Computer:** Type a new name into the field and click **Rename**. (Requires a reboot to take effect).
 * **Join Local Domain:** Enter the target Domain Name, along with your admin Username and Password, and click **Join Domain**. (Requires a reboot).
 * **Join Azure AD (Entra ID):** Click the **Open Azure AD Join Screen** button. This instantly launches the native Windows "Access work or school" settings panel so you can complete the Entra join process.
+* **Time & Date:**
+    * **Time Zone:** Pick a zone and click **Apply**. A live preview shows the current time and the time after applying.
+    * **Sync From:** Choose *Domain hierarchy* (domain-joined PCs), a preset NTP server, or type your own (separate multiple servers with spaces), then click **Apply**.
+    * **Sync Time Now** forces an immediate resync. **Date and Time Settings** opens the Windows settings page.
 
 ### 🌐 Network Diagnostics
 One-click troubleshooting for network connectivity issues.
 * **Run Diagnostics:** Click the **Start Diagnostics** button. The toolkit will systematically test local connectivity, DNS resolution, Gateway ping, and DHCP status.
 * **Review Results:** Each test provides a straightforward Pass/Fail indicator. If the "DNS Server Ping" fails but the "Public DNS Ping (1.1.1.1)" passes, you instantly know it's a local DNS issue and not an internet outage.
+
+### 💽 Storage Management
+Finds out what is filling a disk.
+* **Scan:** Pick a drive (or **Browse Folder...**) and click **Scan**. NTFS drives are read directly from the MFT, so scans are fast. Click **Cancel** to stop a long scan.
+* **Views:** **Browse** drills into folders with a treemap and breadcrumb. **Top Largest Files** and **Top Largest Folders** list the biggest offenders.
+
+### 🔎 Crashfinder
+Read-only health report for PCs that freeze or crash intermittently.
+* **What it collects (last 30 days):** Unexpected shutdowns and bugcheck codes, minidumps and live kernel reports (WATCHDOG), WHEA/disk/driver errors, application hangs and crashes, Reliability Monitor, disk health, top processes, power plan and Fast Startup state, security/startup items, patch level, and graphics driver.
+* **Output:** Saved as a text file in `C:\_INFO\Crashfinder`. Use **Open Report Folder** to view it.
+* *Note: Changes nothing on the PC.*
+
+### 🩺 System Repair
+Repairs a damaged Windows install.
+* **DISM + SFC:** Runs DISM `/RestoreHealth`, then `SFC /scannow`, with live progress, a live log view, and stall detection. You can cancel a run.
+* **Repair source (optional):** Point DISM at an `install.wim`/`install.esd` that matches this Windows build, and set the index. Tick **Limit access** to stop it falling back to Windows Update.
+* **Clear Temp Files:** Empties the current user's temp folder and `C:\Windows\Temp`. Files that are in use are skipped.
+
+### 🚚 Migration Assist
+Moves settings from an old Windows install to a new one (rebuilds, PC replacements).
+* **Export (old install):** Tick the categories, choose a destination (USB drive or share), set a passphrase, and click **Export**. This creates a `Migration_<PCNAME>_<date>` folder. Sign in as the user who owns the printers and drives before exporting.
+* **Import (new install):** Browse to the bundle folder, enter the passphrase, and click **Preview (no changes)** to see what would happen, then click **Import**. Existing items are skipped.
+* **What moves:** printers with their drivers, mapped drives, Wi-Fi profiles, optional static IP, proxy, hosts file, VPN connections, software list, environment variables, default apps, third-party scheduled tasks, public certificates, time zone and region.
+* **What does not move:** saved passwords (you are given a list to re-enter), certificate private keys, USB/WSD printers (add manually), and printer drivers that are not in the Windows driver store (reported by name). Printer drivers only transfer between the same architecture (x64 to x64).
+* **Output:** A per-run report is saved in `C:\_INFO\MigrationAssist`. Use **Open Report Folder** to view it.
 
 ---
 
@@ -57,18 +92,23 @@ You can package your toolkit into a secure, password-protected executable (`.exe
 5. The script will bundle the entire toolkit and compile it into `EndpointToolkit_Locked.exe`.
 
 ### 💾 Building a USB Portable Toolkit (For Offline Sites)
-The USB Toolkit allows you to build a secure, portable, offline version for client sites with zero internet access.
-1. Insert a USB flash drive.
+The USB Toolkit allows you to build a secure, portable version for client sites. The drive is protected with BitLocker To Go.
+1. Insert a USB flash drive (16 GB or larger).
 2. Click the **USB Toolkit** button in the left navigation panel.
 3. Click **Prepare Drive** to automatically format the drive to NTFS and label it "TOOLKIT".
-4. Input your custom password into the **USB Toolkit Password** field.
-5. Click **Build USB Toolkit**. The module will package the toolkit and all local installers into an `EndpointToolkit.exe` file on your USB drive.
+4. Enter your custom password (8+ characters, a BitLocker requirement) into the **USB Toolkit Password (Required)** field. Anyone using the USB will need it.
+5. Click **Setup USB**. The module copies the toolkit and all local installers onto the drive, then encrypts it with BitLocker. Wait for **USB setup complete!** before unplugging. (Building requires Windows Pro/Enterprise.)
 
 **Using the USB Toolkit:**
-1. Plug the USB drive into a client computer and double-click `EndpointToolkit.exe`.
-2. The executable will verify it is running from the original authorized USB drive.
-3. Once it extracts, the `.exe` will close immediately. **You can safely unplug the USB drive at this point and move to the next computer!**
-4. Enter your custom password to decrypt the toolkit and unlock its features.
+1. Plug the USB drive into a client computer and enter the BitLocker password when Windows prompts you (this works on Windows Home too).
+2. Run `Launch.bat` from the drive.
+3. If a newer version has been released, you'll be asked whether to update the USB first. The download is checksum-verified before anything is replaced.
+4. The toolkit copies itself to a temporary local folder. **Once the toolkit window appears, you can safely unplug the USB drive and move to the next computer!**
+5. Enter your custom USB password at the toolkit prompt to unlock its features.
+
+### 🔄 Updating the Toolkit
+* USB toolkits update themselves from the GitHub releases of `abyssalsoldier/Endpoint-toolkit` whenever they're launched with internet access. You're only prompted when a **newer** version exists.
+* **To publish a new version:** bump `dependencies/version.txt`, commit, and push to `master`. The GitHub Action builds and publishes the release automatically.
 
 ---
 

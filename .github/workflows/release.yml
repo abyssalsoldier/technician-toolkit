@@ -1,15 +1,20 @@
 name: Build Release
 
+# Publishes a GitHub Release whenever dependencies/version.txt is bumped on master.
+# USB toolkits self-update from:
+#   https://github.com/abyssalsoldier/Endpoint-toolkit/releases/latest/download/{version.txt,latest.zip,latest.sha256}
+
 on:
   push:
-    branches: [main]
+    branches: [master]
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  deploy:
-    name: Package Release
+  release:
+    name: Package and publish release
     runs-on: ubuntu-latest
 
     steps:
@@ -23,26 +28,49 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building version: $VERSION"
 
-      - name: Create clean zip
+      - name: Check for existing release
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          zip -r endpoint-build-toolkit.zip . \
+          if gh release view "v${{ steps.version.outputs.version }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release v${{ steps.version.outputs.version }} already exists - bump dependencies/version.txt to publish a new one."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create clean zip
+        if: steps.exists.outputs.exists == 'false'
+        run: |
+          zip -r latest.zip . \
             -x ".git/*" \
             -x ".github/*" \
             -x ".claude/*" \
             -x ".gitignore" \
             -x ".gitattributes" \
             -x "README.md" \
-            -x "dependencies/Agent/toolkit-config.json" \
-            -x "dependencies/Agent/Protect-Credentials.ps1" \
-            -x "dependencies/Agent/clients.csv" \
             -x "*.key" \
             -x "build.ps1" \
             -x ".vscode/*" \
             -x "_builds/*"
 
       - name: Generate SHA-256 checksum
+        if: steps.exists.outputs.exists == 'false'
         run: |
-          sha256sum endpoint-build-toolkit.zip | awk '{print $1}' > latest.sha256
+          sha256sum latest.zip | awk '{print $1}' > latest.sha256
+          cp dependencies/version.txt version.txt
           echo "SHA-256: $(cat latest.sha256)"
 
-
+      - name: Publish GitHub Release
+        if: steps.exists.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          gh release create "v${VERSION}" latest.zip latest.sha256 version.txt \
+            --target "${{ github.sha }}" \
+            --title "v${VERSION}" \
+            --generate-notes \
+            --latest
+          echo "Published v${VERSION}"

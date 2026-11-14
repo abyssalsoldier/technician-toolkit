@@ -36,7 +36,7 @@ function Get-UsbToolkitUI {
     $driveLabel.FontWeight = 'Bold'
     $panel.Children.Add($driveLabel) | Out-Null
 
-    $driveRow = New-Object System.Windows.Controls.StackPanel
+    $driveRow = New-Object System.Windows.Controls.WrapPanel
     $driveRow.Orientation = 'Horizontal'
     $driveRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
 
@@ -140,7 +140,6 @@ function Get-UsbToolkitUI {
         }
     })
 
-
     # ===== SETUP USB BUTTON =====
     $setupBtn = New-Object System.Windows.Controls.Button
     $setupBtn.Content = 'Setup USB'
@@ -185,7 +184,6 @@ function Get-UsbToolkitUI {
     $Global:SyncHash.UsbSetupBtn = $setupBtn
     $Global:SyncHash.UsbProgress = $progress
     $Global:SyncHash.UsbStatusText = $statusText
-
     $Global:SyncHash.UsbPwdBox = $pwdBox
     $Global:SyncHash.StatusText = $statusText
 
@@ -213,14 +211,14 @@ function Get-UsbToolkitUI {
         $prepB.IsEnabled = $true
         $allPass = $true
 
-        # Size check (28 GB minimum = marketing 32GB)
+        # Size check (14 GB minimum = marketing 16GB)
         $sizeGB = $selected.SizeGB
-        if ($sizeGB -ge 28) {
-            $sizeChk.Text = "$([char]0x2713) Size: $sizeGB GB (minimum 28 GB)"
+        if ($sizeGB -ge 14) {
+            $sizeChk.Text = "$([char]0x2713) Size: $sizeGB GB (minimum 14 GB)"
             $sizeChk.Foreground = New-Object System.Windows.Media.SolidColorBrush(
                 [System.Windows.Media.ColorConverter]::ConvertFromString('#A6E3A1'))
         } else {
-            $sizeChk.Text = "$([char]0x2717) Size: $sizeGB GB - minimum 32GB drive required"
+            $sizeChk.Text = "$([char]0x2717) Size: $sizeGB GB - minimum 16GB drive required"
             $sizeChk.Foreground = New-Object System.Windows.Media.SolidColorBrush(
                 [System.Windows.Media.ColorConverter]::ConvertFromString('#F38BA8'))
             $allPass = $false
@@ -403,7 +401,7 @@ function Get-UsbToolkitUI {
         $Global:SyncHash.UsbStatusText.Text = 'Setting up USB...'
 
         $driveLetter = $selected.DriveLetter
-        $downloadInstallers = $false
+        
         if ($Global:SyncHash.UsbPwdBox.Visibility -eq 'Visible') {
             $pwdText = $Global:SyncHash.UsbPwdBox.Password
         } else {
@@ -433,7 +431,6 @@ function Get-UsbToolkitUI {
         $rs.Open()
         $rs.SessionStateProxy.SetVariable('SyncHash', $Global:SyncHash)
         $rs.SessionStateProxy.SetVariable('DriveLetter', $driveLetter)
-        $rs.SessionStateProxy.SetVariable('DownloadInstallers', $downloadInstallers)
         $rs.SessionStateProxy.SetVariable('ToolkitPassword', $toolkitPassword)
         $rs.SessionStateProxy.SetVariable('MainToolkitKey', $Global:SyncHash.ToolkitKey)
 
@@ -452,7 +449,7 @@ function Get-UsbToolkitUI {
             }
 
             try {
-                Invoke-UsbToolkitSetup -DriveLetter $DriveLetter -DownloadInstallers $DownloadInstallers -ToolkitPassword $ToolkitPassword -MainToolkitKey $MainToolkitKey
+                Invoke-UsbToolkitSetup -DriveLetter $DriveLetter -ToolkitPassword $ToolkitPassword -MainToolkitKey $MainToolkitKey
             } catch {
                 $entry.Status = 'Error'
                 $entry.Detail = $_.Exception.Message
@@ -487,7 +484,6 @@ function Get-UsbToolkitUI {
 function Invoke-UsbToolkitSetup {
     param(
         [string]$DriveLetter,
-        [bool]$DownloadInstallers = $false,
         [securestring]$ToolkitPassword,
         [string]$MainToolkitKey
     )
@@ -495,157 +491,76 @@ function Invoke-UsbToolkitSetup {
     $sourceRoot = $SyncHash.Toolkit.Parent
     $version = $SyncHash.Toolkit.Version
 
-    Write-Log "Staging toolkit for SFX compilation on ${DriveLetter}:\ ..." -Level Info
-    Update-ActionStatus 'Staging files...' '#F9E2AF'
+    Write-Log "Copying toolkit to ${DriveLetter}:\ ..." -Level Info
+    Update-ActionStatus 'Copying files...' '#F9E2AF'
 
-    $tempStaging = Join-Path $env:TEMP "ToolkitUSBBuild_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-    if (Test-Path $tempStaging) { Remove-Item $tempStaging -Recurse -Force }
-    New-Item -ItemType Directory -Path $tempStaging -Force | Out-Null
+    $driveRoot = "${DriveLetter}:\"
 
     $robocopyArgs = @(
-        "`"$sourceRoot`"",
-        "`"$tempStaging`"",
-        '/MIR',
-        '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', '_builds',
-        '/XF', '.gitignore', 'Protect-Credentials.ps1', 'toolkit-config.json', 'clients.csv', '.toolkit-key', 'build.ps1',
+        (ConvertTo-RobocopyPathArg $sourceRoot),
+        (ConvertTo-RobocopyPathArg $driveRoot),
+        '/E',
+        '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', '_builds', 'System Volume Information', '$RECYCLE.BIN',
+        '/XF', '.gitignore', '.toolkit-key', 'build.ps1',
         '/NFL', '/NDL', '/NJH', '/NJS',
         '/R:2', '/W:1'
     )
     $proc = Start-Process robocopy -ArgumentList $robocopyArgs -Wait -PassThru -NoNewWindow
 
     if ($proc.ExitCode -ge 8) {
-        Write-Log "Error during staging copy (robocopy exit code $($proc.ExitCode))." -Level Error
-        Update-ActionStatus 'Staging failed!' '#F38BA8'
+        Write-Log "Error during copy (robocopy exit code $($proc.ExitCode))." -Level Error
+        Update-ActionStatus 'Copy failed!' '#F38BA8'
         throw "Robocopy failed with exit code $($proc.ExitCode)"
     }
 
+    # Serial-bound cache of the real toolkit key, unlockable only on this drive with the custom password
     $usbSerial = Get-DriveSerial -DriveLetter $DriveLetter
+    if (-not $usbSerial) {
+        throw "Could not read the USB drive serial number; cannot bind the toolkit to this drive."
+    }
 
-    # Generate .sfx-key if password provided
     if ($ToolkitPassword -and $MainToolkitKey) {
         $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($ToolkitPassword)
         $plainToolkitPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
         [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-        
-        $encryptedPassword = Protect-SfxPassword -MainToolkitKey $MainToolkitKey -SfxPassword $plainToolkitPassword
-        Set-Content -Path "$tempStaging\.sfx-key" -Value $encryptedPassword -NoNewline -Force
-        (Get-Item "$tempStaging\.sfx-key" -Force).Attributes = 'Hidden'
-        Write-Log 'Generated .sfx-key in staging directory.' -Level Success
+
+        $cachedKeyPath = "${driveRoot}.toolkit-key"
+        $encryptedKey = Protect-CachedPassword -Password $MainToolkitKey -DriveSerial $usbSerial -UserPassword $plainToolkitPassword
+        Set-Content -Path $cachedKeyPath -Value $encryptedKey -NoNewline -Force
+        (Get-Item $cachedKeyPath -Force).Attributes = 'Hidden'
+        Write-Log 'Wrote USB-bound .toolkit-key.' -Level Success
     }
 
-
-
-    Update-ActionStatus 'Compressing payload...' '#F9E2AF'
-    Write-Log "Compressing staged files..." -Level Info
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zipPath = Join-Path $env:TEMP "toolkit-payload-$(Get-Date -Format 'yyyyMMdd_HHmmss').zip"
-    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-    [System.IO.Compression.ZipFile]::CreateFromDirectory($tempStaging, $zipPath)
-
-    Update-ActionStatus 'Compiling SFX...' '#F9E2AF'
-    Write-Log "Compiling custom C# extraction stub..." -Level Info
-
-    $csharpCode = @"
-using System;
-using System.IO;
-using System.IO.Compression;
-using System.Diagnostics;
-using System.Management;
-using System.Reflection;
-
-namespace EndpointToolkit
-{
-    class Program
-    {
-        static void Main(string[] args)
-        {
-            string exePath = Assembly.GetExecutingAssembly().Location;
-            string driveLetter = Path.GetPathRoot(exePath).TrimEnd('\\');
-            
-            string expectedSerial = "$usbSerial";
-            string actualSerial = "";
-            
-            if (!string.IsNullOrEmpty(expectedSerial)) {
-                try {
-                    var searcher = new ManagementObjectSearcher($"ASSOCIATORS OF {{Win32_LogicalDisk.DeviceID='{driveLetter}'}} WHERE AssocClass=Win32_LogicalDiskToPartition");
-                    foreach (ManagementObject partition in searcher.Get()) {
-                        var diskSearcher = new ManagementObjectSearcher($"ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='{partition["DeviceID"]}'}} WHERE AssocClass=Win32_DiskDriveToDiskPartition");
-                        foreach (ManagementObject disk in diskSearcher.Get()) {
-                            if (disk["SerialNumber"] != null) {
-                                actualSerial = disk["SerialNumber"].ToString().Trim();
-                                break;
-                            }
-                        }
-                        break;
-                    }
-                } catch { }
-
-                if (actualSerial != expectedSerial) {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("Hardware binding failed.");
-                    Console.WriteLine("This executable cannot be copied from its original USB drive.");
-                    Console.ResetColor();
-                    Console.WriteLine("Press any key to exit...");
-                    Console.ReadKey();
-                    return;
-                }
-            }
-
-            string tempDir = Path.Combine(Path.GetTempPath(), "EndpointToolkit_SC");
-            if (Directory.Exists(tempDir)) {
-                try { Directory.Delete(tempDir, true); } catch { }
-            }
-            Directory.CreateDirectory(tempDir);
-            
-            Console.WriteLine("Extracting Toolkit...");
-            try {
-                using (FileStream fs = new FileStream(exePath, FileMode.Open, FileAccess.Read)) {
-                    using (ZipArchive archive = new ZipArchive(fs, ZipArchiveMode.Read)) {
-                        archive.ExtractToDirectory(tempDir);
-                    }
-                }
-            } catch (Exception ex) {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Extraction failed: " + ex.Message);
-                Console.ResetColor();
-                Console.ReadKey();
-                return;
-            }
-
-            string setupScript = Path.Combine(tempDir, @"dependencies\Invoke-EndpointSetup.ps1");
-            ProcessStartInfo psi = new ProcessStartInfo {
-                FileName = "powershell.exe",
-                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{setupScript}\"",
-                UseShellExecute = true,
-                Verb = "RunAs"
-            };
-            try {
-                Process.Start(psi);
-            } catch (Exception ex) {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Launch failed: " + ex.Message);
-                Console.ResetColor();
-                Console.ReadKey();
-            }
+    # Protect the drive with BitLocker To Go (custom password). The drive stays rewritable.
+    Update-ActionStatus 'Enabling BitLocker...' '#F9E2AF'
+    Write-Log "Enabling BitLocker To Go on ${DriveLetter}: ..." -Level Info
+    try {
+        if (-not (Get-Command Enable-BitLocker -ErrorAction SilentlyContinue)) {
+            throw 'BitLocker cmdlets are not available (requires Windows Pro/Enterprise on this machine).'
         }
+        Enable-BitLocker -MountPoint "${DriveLetter}:" -PasswordProtector -Password $ToolkitPassword -EncryptionMethod XtsAes256 -UsedSpaceOnly -ErrorAction Stop | Out-Null
+
+        # Wait for encryption so the drive isn't pulled mid-way
+        $deadline = (Get-Date).AddMinutes(30)
+        do {
+            Start-Sleep -Seconds 3
+            $vol = Get-BitLockerVolume -MountPoint "${DriveLetter}:"
+            Update-ActionStatus "Encrypting USB... $($vol.EncryptionPercentage)%" '#F9E2AF'
+        } while ($vol.VolumeStatus -eq 'EncryptionInProgress' -and (Get-Date) -lt $deadline)
+
+        if ($vol.VolumeStatus -eq 'EncryptionInProgress') {
+            Write-Log 'BitLocker encryption still running; keep the drive connected until it finishes.' -Level Warning
+        } else {
+            Write-Log 'BitLocker To Go enabled.' -Level Success
+        }
+    } catch {
+        Write-Log "BitLocker failed: $($_.Exception.Message) Removing toolkit files from the drive." -Level Error
+        Get-ChildItem -Path $driveRoot -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notin @('System Volume Information', '$RECYCLE.BIN') } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Update-ActionStatus 'BitLocker failed!' '#F38BA8'
+        throw
     }
-}
-"@
-
-    $stubPath = Join-Path $env:TEMP "ToolkitStub-$(Get-Date -Format 'yyyyMMdd_HHmmss').exe"
-    Add-Type -TypeDefinition $csharpCode -ReferencedAssemblies "System.Management", "System.IO.Compression", "System.IO.Compression.FileSystem" -OutputAssembly $stubPath -OutputType ConsoleApplication
-
-    Write-Log "Bundling payload into executable..." -Level Info
-    $targetExe = "${DriveLetter}:\EndpointToolkit.exe"
-    if (Test-Path $targetExe) { Remove-Item $targetExe -Force -ErrorAction SilentlyContinue }
-
-    # Append ZIP bytes to Stub EXE natively
-    cmd.exe /c copy /b "`"$stubPath`"" + "`"$zipPath`"" "`"$targetExe`"" | Out-Null
-
-    # Cleanup temp files
-    Remove-Item $tempStaging -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-    Remove-Item $stubPath -Force -ErrorAction SilentlyContinue
 
     Write-Log "USB Toolkit setup complete (v$version) on ${DriveLetter}:" -Level Success
     Update-ActionStatus "USB setup complete! (v$version)" '#A6E3A1'

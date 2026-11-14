@@ -2,6 +2,12 @@
 # Endpoint Build Toolkit v1.0 — WPF GUI orchestrator
 # Run as Administrator
 
+param(
+    [string]$UsbDrive,
+    [string]$UsbSerial,
+    [switch]$Localized
+)
+
 # --- Admin elevation ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Warning "This script requires Administrator privileges. Relaunching as Administrator..."
@@ -15,7 +21,11 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         exit
     }
 
-    Start-Process powershell -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs
+    $relaunchArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+    if ($Localized) { $relaunchArgs += " -Localized" }
+    if ($UsbDrive)  { $relaunchArgs += " -UsbDrive `"$UsbDrive`"" }
+    if ($UsbSerial) { $relaunchArgs += " -UsbSerial `"$UsbSerial`"" }
+    Start-Process powershell -WindowStyle Hidden -ArgumentList $relaunchArgs -Verb RunAs
     exit
 }
 
@@ -27,6 +37,7 @@ $script:Toolkit = @{
     Parent        = Split-Path $PSScriptRoot -Parent       # repo root (where Launch.bat lives)
     IsUsb         = $false
     UsbDrive      = $null
+    UsbSerial     = $null
     Config        = $null
     Authenticated = $false
     Session       = $null
@@ -74,10 +85,53 @@ if (Test-Path $uiPath) {
     exit
 }
 
-# --- USB detection ---
-Test-UsbExecution
-if ($script:Toolkit.IsUsb) {
-    # Update logic removed
+# --- USB detection, self-update, and local copy ---
+# Updates come from the GitHub releases of abyssalsoldier/Endpoint-toolkit (published by .github/workflows/release.yml).
+# When launched from a USB, the toolkit is copied to a local temp folder and this running instance is
+# re-pointed at it, so the drive can be unplugged at any point after startup.
+$UpdateBaseUrl = 'https://github.com/abyssalsoldier/Endpoint-toolkit/releases/latest/download'
+$localCopyRoot = $null
+if ($Localized -and $UsbDrive) {
+    # Legacy relaunch path (kept for compatibility)
+    $script:Toolkit.IsUsb = $true
+    $script:Toolkit.UsbDrive = $UsbDrive
+    $script:Toolkit.UsbSerial = $UsbSerial
+    $localCopyRoot = $script:Toolkit.Parent
+} else {
+    Test-UsbExecution
+    if ($script:Toolkit.IsUsb) {
+        Update-UsbToolkit -UpdateBaseUrl $UpdateBaseUrl
+
+        $usbSerial = Get-DriveSerial -DriveLetter $script:Toolkit.UsbDrive
+        # Expand 8.3 short names (e.g. JESSER~1); module discovery compares against long file paths
+        $longTemp  = (Get-Item -LiteralPath $env:TEMP).FullName
+        $localRoot = (New-Item -ItemType Directory -Path (Join-Path $longTemp "EndpointToolkit_$([guid]::NewGuid().ToString('N'))") -Force).FullName
+
+        $copyError = $null
+        try {
+            $copyError = Copy-ToolkitToLocal -Source $script:Toolkit.Parent -Destination $localRoot
+        } catch {
+            $copyError = $_.Exception.Message
+        }
+
+        $localScript = "$localRoot\dependencies\Invoke-EndpointSetup.ps1"
+        if (-not $copyError -and (Test-Path $localScript)) {
+            # Switch this running instance to the local copy; no relaunch needed.
+            # Core/UI are already loaded in memory, and everything loaded later
+            # (modules, runspaces) resolves through Toolkit.Root / Toolkit.Parent.
+            $script:Toolkit.UsbSerial = $usbSerial
+            $script:Toolkit.Root      = "$localRoot\dependencies"
+            $script:Toolkit.Parent    = $localRoot
+            $localCopyRoot            = $localRoot
+            Set-Location $env:TEMP
+        } else {
+            Add-Type -AssemblyName PresentationFramework
+            [System.Windows.MessageBox]::Show(
+                "Could not copy the toolkit locally ($copyError).`n`nThe toolkit will run from the USB. Do NOT unplug it while the toolkit is open.",
+                'Local copy failed', 'OK', 'Warning') | Out-Null
+            Remove-Item $localRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # --- Launch GUI ---
@@ -102,6 +156,12 @@ $tempPaths = @(
 )
 foreach ($p in $tempPaths) {
     if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# Remove the local copy made from the USB at startup
+if ($localCopyRoot -and (Split-Path $localCopyRoot -Leaf).StartsWith('EndpointToolkit_', [System.StringComparison]::OrdinalIgnoreCase)) {
+    Set-Location $env:TEMP
+    Remove-Item $localCopyRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 
