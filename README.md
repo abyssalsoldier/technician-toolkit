@@ -54,7 +54,7 @@ For off-grid environments, the `Setup-UsbToolkit` module turns a standard USB fl
 When `Launch.bat` is started from a USB drive, the toolkit first checks for updates (see below), then copies itself to a randomized `%TEMP%\EndpointToolkit_<guid>` folder with a progress window and re-points the running instance at that copy. Once the main window appears, the technician can **pull the USB** and move to the next PC. The local copy is deleted on exit. If the copy fails, the toolkit warns that it is running from the USB and must not be unplugged.
 
 ### Self-Update from GitHub Releases
-USB toolkits update themselves from this repository's [GitHub Releases](https://github.com/abyssalsoldier/Endpoint-toolkit/releases).
+USB toolkits update themselves from this repository's [GitHub Releases](https://github.com/abyssalsoldier/technician-toolkit/releases).
 *   **Publishing:** `.github/workflows/release.yml` runs on every push to `master`. If no release exists yet for the version in `dependencies/version.txt` (or `client/version.txt` in a client repo), it builds a clean `latest.zip`, computes `latest.sha256`, and publishes release `vX.Y.Z` with `latest.zip`, `latest.sha256`, and `version.txt` attached. Pushes that don't bump the version publish nothing.
 *   **Checking:** On launch from a USB, the toolkit reads `releases/latest/download/version.txt` from this repo, or from the client's `UpdateBaseUrl` in a client build. Only a *newer* version triggers an update prompt (a message box, since the console is hidden).
 *   **Integrity:** The downloaded zip must match `latest.sha256` or the update is aborted. A missing or malformed checksum also aborts.

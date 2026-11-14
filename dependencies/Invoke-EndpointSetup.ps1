@@ -89,7 +89,7 @@ if (Test-Path $uiPath) {
 }
 
 # --- USB detection, self-update, and local copy ---
-# Updates come from the GitHub releases of abyssalsoldier/Endpoint-toolkit (published by .github/workflows/release.yml).
+# Updates come from the GitHub releases of abyssalsoldier/technician-toolkit (published by .github/workflows/release.yml).
 # When launched from a USB, the toolkit is copied to a local temp folder and this running instance is
 # re-pointed at it, so the drive can be unplugged at any point after startup.
 # Feed from Get-ToolkitUpdateFeed: core feed (default), or per client\branding.json UpdateSource

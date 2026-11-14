@@ -9,7 +9,7 @@ git remote -v
 Test-Path client
 ```
 
-- **Client repo:** an `upstream` remote points at the core repo (`abyssalsoldier/Endpoint-toolkit`) and/or a `client/` folder exists. Follow **section 2**.
+- **Client repo:** an `upstream` remote points at the core repo (`abyssalsoldier/technician-toolkit`) and/or a `client/` folder exists. Follow **section 2**.
 - **Core repo:** `origin` is the core repo and there is no `client/` folder. Follow **section 6**.
 
 If it's unclear, ask the user before editing anything.
@@ -39,7 +39,7 @@ git merge upstream/master                   # clean if the boundary was respecte
 - **Conflict in a path outside `client/`:** resolve with `git checkout --theirs -- <path>` (take core), then `git add <path>`. Never keep a local version of a core file. Tell the user which files conflicted, because a local core edit existed.
 - **Conflict inside `client/`:** shouldn't happen, since core never ships `client/`. Stop and ask the user.
 - After the merge, bump `client/version.txt` (see below), commit as `Update core to v<dependencies/version.txt>`, and push only if the user asks.
-- If `upstream` is missing: `git remote add upstream https://github.com/abyssalsoldier/Endpoint-toolkit.git`
+- If `upstream` is missing: `git remote add upstream https://github.com/abyssalsoldier/technician-toolkit.git`
 
 ### Ship a release
 Bump `client/version.txt` (semantic version, always higher than the last release), commit, and push to `master`. CI publishes `v<version>` to this repo's Releases. Bump the patch for fixes and core updates, the minor for new modules or features, the major for breaking changes to how technicians use the toolkit.

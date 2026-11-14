@@ -179,7 +179,7 @@ function Test-OvBranding {
         'custom' {
             if (-not $b.UpdateBaseUrl) { $errors += 'UpdateSource is "custom" but UpdateBaseUrl is empty.' }
             elseif ($b.UpdateBaseUrl -notmatch '^https://\S+$') { $errors += 'UpdateBaseUrl must be an https URL.' }
-            elseif ($b.UpdateBaseUrl -match 'abyssalsoldier/Endpoint-toolkit') { $errors += 'UpdateBaseUrl points at the CORE feed. Use UpdateSource "core" for automatic core updates instead.' }
+            elseif ($b.UpdateBaseUrl -match 'abyssalsoldier/(technician-toolkit|Endpoint-toolkit)') { $errors += 'UpdateBaseUrl points at the CORE feed. Use UpdateSource "core" for automatic core updates instead.' }
             else {
                 $infos += "Updates: own feed $($b.UpdateBaseUrl)"
                 if ($b.UpdateBaseUrl -notmatch '/releases/latest/download/?$') { $warnings += 'UpdateBaseUrl usually ends with /releases/latest/download (GitHub Releases).' }

@@ -167,7 +167,7 @@ A mistake in `branding.json` never stops the toolkit from starting. It uses the 
 Use this if you want version control and your own release feed:
 
 ```powershell
-git clone https://github.com/abyssalsoldier/Endpoint-toolkit.git acme-toolkit   # clone, don't download: shared history = clean updates
+git clone https://github.com/abyssalsoldier/technician-toolkit.git acme-toolkit   # clone, don't download: shared history = clean updates
 cd acme-toolkit
 git remote rename origin upstream
 git remote add origin https://github.com/acme-it/acme-endpoint-toolkit.git        # your empty repo
@@ -191,6 +191,9 @@ git add client; git commit -m "Add Acme client"; git push
 ---
 
 ## Changelog
+
+### Core 2.1.1
+- Changed: the core repo is now `abyssalsoldier/technician-toolkit` (was `Endpoint-toolkit`). The default update feed points at the new name. GitHub redirects the old URL, so existing USB sticks keep updating. Client repos should run `git remote set-url upstream https://github.com/abyssalsoldier/technician-toolkit.git`.
 
 ### Core 2.1.0
 - New: **Client Setup wizard** (`Setup-Client.bat`). Branding with a live preview, add/create/remove modules, Show and Lock per module, installers, update mode, checks, building the exe and locked exe, USB, export/import of client packages. No GitHub needed.

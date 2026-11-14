@@ -107,7 +107,7 @@ The USB Toolkit allows you to build a secure, portable version for client sites.
 5. Enter your custom USB password at the toolkit prompt to unlock its features.
 
 ### 🔄 Updating the Toolkit
-* USB toolkits update themselves from the GitHub releases of `abyssalsoldier/Endpoint-toolkit` whenever they're launched with internet access. You're only prompted when a **newer** version exists.
+* USB toolkits update themselves from the GitHub releases of `abyssalsoldier/technician-toolkit` whenever they're launched with internet access. You're only prompted when a **newer** version exists.
 * **To publish a new version:** bump `dependencies/version.txt`, commit, and push to `master`. The GitHub Action builds and publishes the release automatically.
 
 ---

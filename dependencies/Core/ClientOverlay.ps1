@@ -22,7 +22,7 @@ function Get-ToolkitCoreDefaults {
         AccentColor     = '#89B4FA'
         Logo            = ''
         SupportContact  = ''
-        UpdateBaseUrl   = 'https://github.com/abyssalsoldier/Endpoint-toolkit/releases/latest/download'
+        UpdateBaseUrl   = 'https://github.com/abyssalsoldier/technician-toolkit/releases/latest/download'
         UpdateSource    = 'core'     # core | custom | none
         DisabledModules = @()
         LockedModules   = @()        # module Names, or '*' for all
