@@ -1,6 +1,16 @@
 # Export-LockedToolkit.ps1
 # Compiles the current toolkit into a standalone, password-protected Self-Extracting Executable (SFX).
 # The resulting .exe can be distributed safely, and cannot be accessed without the password.
+#
+# Interactive:     .\Export-LockedToolkit.ps1                     (prompts for password and output folder)
+# From the wizard: .\Export-LockedToolkit.ps1 -Password $secure -OutputPath C:\out
+# Client builds are refused when core files differ from core-manifest.json (see CoreIntegrity.ps1).
+
+param(
+    [SecureString]$Password,
+    [string]$OutputPath,
+    [switch]$AllowModifiedCore
+)
 
 $ErrorActionPreference = "Stop"
 $scriptDir = $PSScriptRoot
@@ -10,6 +20,9 @@ $toolkitRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 . (Join-Path $toolkitRoot "dependencies\Core\Crypto.ps1")
 . (Join-Path $toolkitRoot "dependencies\Core\UsbDetection.ps1")
 . (Join-Path $toolkitRoot "dependencies\Core\ClientOverlay.ps1")
+. (Join-Path $toolkitRoot "dependencies\Agent\CoreIntegrity.ps1")
+
+if (-not (Assert-ToolkitCoreIntegrity -Root $toolkitRoot -AllowModifiedCore:$AllowModifiedCore)) { exit 1 }
 
 # Exe name stays EndpointToolkit_Locked.exe (ConnectWise Toolbox entries depend on it) unless client\branding.json sets ExeName
 $branding = Get-ToolkitBranding -Parent $toolkitRoot
@@ -20,7 +33,7 @@ Write-Host "=== Export Locked Toolkit ===" -ForegroundColor Cyan
 Write-Host "This will package the current toolkit folder into a standalone .exe file."
 Write-Host ""
 
-$password = Read-Host "Enter the password to lock this toolkit" -AsSecureString
+$password = if ($Password) { $Password } else { Read-Host "Enter the password to lock this toolkit" -AsSecureString }
 if ($password.Length -lt 4) {
     Write-Host "ERROR: Password must be at least 4 characters." -ForegroundColor Red
     exit 1
@@ -29,7 +42,7 @@ $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($password)
 $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
 [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
 
-$outPath = Read-Host "Enter output path (e.g., C:\Users\Public\Desktop)"
+$outPath = if ($OutputPath) { $OutputPath } else { Read-Host "Enter output path (e.g., C:\Users\Public\Desktop)" }
 if (-not (Test-Path $outPath)) {
     Write-Host "Output path not found." -ForegroundColor Red
     exit 1
@@ -108,7 +121,7 @@ namespace EndpointToolkit
             string setupScript = Path.Combine(tempDir, @"dependencies\Invoke-EndpointSetup.ps1");
             ProcessStartInfo psi = new ProcessStartInfo {
                 FileName = "powershell.exe",
-                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{setupScript}\"",
+                Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + setupScript + "\"",
                 UseShellExecute = true,
                 Verb = "RunAs"
             };

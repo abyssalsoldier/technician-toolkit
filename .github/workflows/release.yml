@@ -41,10 +41,21 @@ jobs:
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "Building $NAME version: $VERSION"
 
-      - name: Validate client overlay
+      - name: Validate client overlay and core integrity
         if: hashFiles('client/**') != ''
         shell: pwsh
         run: ./tools/Test-ClientOverlay.ps1
+
+      - name: Verify core manifest is current (core repo)
+        if: hashFiles('client/**') == ''
+        shell: pwsh
+        run: |
+          . ./dependencies/Agent/CoreIntegrity.ps1
+          $r = Test-ToolkitCoreIntegrity -Root .
+          if (-not $r.Ok) {
+            Format-ToolkitIntegrityReport -Result $r | ForEach-Object { Write-Host $_ }
+            Write-Error 'dependencies/core-manifest.json is out of date. Run .\build.ps1 -UpdateCoreManifest and commit it.'
+          }
 
       - name: Check for existing release
         id: exists
@@ -72,12 +83,28 @@ jobs:
             -x "AGENTS.md" \
             -x "CLAUDE.md" \
             -x "CLIENT_GUIDE.md" \
+            -x "Setup-Client.bat" \
             -x "tools/*" \
             -x "client.example/*" \
+            -x "client/_removed/*" \
+            -x "client/Data/*" \
             -x "*.key" \
             -x "build.ps1" \
             -x ".vscode/*" \
             -x "_builds/*"
+
+      - name: Create client kit (core repo only)
+        # Everything a client needs to set up a branded toolkit WITHOUT GitHub: the full core including
+        # Setup-Client.bat, tools/, client.example/ and the guides. Clients download this, not latest.zip.
+        if: steps.exists.outputs.exists == 'false' && hashFiles('client/**') == ''
+        run: |
+          zip -r client-kit.zip . \
+            -x ".git/*" \
+            -x ".claude/*" \
+            -x ".vscode/*" \
+            -x "_builds/*" \
+            -x "*.key" \
+            -x "latest.zip"
 
       - name: Generate SHA-256 checksum
         if: steps.exists.outputs.exists == 'false'
@@ -92,7 +119,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          gh release create "v${VERSION}" latest.zip latest.sha256 version.txt \
+          ASSETS="latest.zip latest.sha256 version.txt"
+          if [ -f client-kit.zip ]; then ASSETS="$ASSETS client-kit.zip"; fi
+          gh release create "v${VERSION}" $ASSETS \
             --target "${{ github.sha }}" \
             --title "${{ steps.version.outputs.name }} v${VERSION}" \
             --generate-notes \

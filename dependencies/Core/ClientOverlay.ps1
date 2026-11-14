@@ -23,8 +23,11 @@ function Get-ToolkitCoreDefaults {
         Logo            = ''
         SupportContact  = ''
         UpdateBaseUrl   = 'https://github.com/abyssalsoldier/Endpoint-toolkit/releases/latest/download'
+        UpdateSource    = 'core'     # core | custom | none
         DisabledModules = @()
+        LockedModules   = @()        # module Names, or '*' for all
         ExeName         = ''
+        OverlayApiVersion = 1        # bump only for breaking changes to the client overlay / module API
     }
 }
 
@@ -95,9 +98,10 @@ function Get-ToolkitBranding {
     if (-not $clientRoot) { return $branding }
 
     $branding.IsClient = $true
-    # A client build never falls back to the core release feed: updating a client USB from the core
-    # feed would mirror away the client's folder. No valid client feed = no self-update.
+    # Until branding.json says otherwise, a client build has no self-update (UpdateSource resolved below).
+    $coreFeed = $branding.UpdateBaseUrl
     $branding.UpdateBaseUrl = ''
+    $branding.UpdateSource  = 'none'
 
     $jsonPath = Join-Path $clientRoot 'branding.json'
     if (-not (Test-Path -LiteralPath $jsonPath -PathType Leaf)) {
@@ -129,12 +133,34 @@ function Get-ToolkitBranding {
     $v = & $get 'SupportContact'
     if ($v -is [string]) { $branding.SupportContact = $v.Trim() }
 
+    # Update feed:
+    #   UpdateSource "core"   -> core release feed; the USB update keeps the local client\ folder
+    #   UpdateSource "custom" -> the client's own UpdateBaseUrl; its releases must contain client\
+    #   UpdateSource "none"   -> no self-update
+    #   (missing)             -> "custom" when UpdateBaseUrl is set, else "none"  (v2.0 behavior)
+    $customUrl = ''
     $v = & $get 'UpdateBaseUrl'
-    if ($v -is [string] -and $v.Trim() -match '^https://\S+$') { $branding.UpdateBaseUrl = $v.Trim().TrimEnd('/') }
-    elseif ($v) { & $addWarning "branding.json UpdateBaseUrl '$v' is not an https URL - self-update disabled." }
+    if ($v -is [string] -and $v.Trim() -match '^https://\S+$') { $customUrl = $v.Trim().TrimEnd('/') }
+    elseif ($v) { & $addWarning "branding.json UpdateBaseUrl '$v' is not an https URL." }
 
+    $source = & $get 'UpdateSource'
+    if ($source -is [string] -and $source.Trim()) { $source = $source.Trim().ToLower() } else { $source = if ($customUrl) { 'custom' } else { 'none' } }
+    switch ($source) {
+        'core'   { $branding.UpdateSource = 'core'; $branding.UpdateBaseUrl = $coreFeed }
+        'custom' {
+            if ($customUrl) { $branding.UpdateSource = 'custom'; $branding.UpdateBaseUrl = $customUrl }
+            else { & $addWarning 'branding.json UpdateSource is "custom" but UpdateBaseUrl is not a valid https URL - self-update disabled.' }
+        }
+        'none'   { }
+        default  { & $addWarning "branding.json UpdateSource '$source' must be core, custom or none - self-update disabled." }
+    }
+
+    $toList = { param($x) @($x | Where-Object { $_ -is [string] -and $_.Trim() } | ForEach-Object { $_.Trim() }) }
     $v = & $get 'DisabledModules'
-    if ($v) { $branding.DisabledModules = @($v | Where-Object { $_ -is [string] -and $_.Trim() } | ForEach-Object { $_.Trim() }) }
+    if ($v) { $branding.DisabledModules = & $toList $v }
+
+    $v = & $get 'LockedModules'
+    if ($v) { $branding.LockedModules = & $toList $v }
 
     $v = & $get 'ExeName'
     if ($v -is [string] -and $v.Trim()) {
@@ -160,7 +186,9 @@ function Initialize-ToolkitOverlay {
     } catch {
         [void]$ctx.OverlayWarnings.Add("Client overlay failed to load ($($_.Exception.Message)) - using core defaults.")
         $ctx.Branding = Get-ToolkitCoreDefaults
-        if (Get-ToolkitClientRoot -Parent $ctx.Parent) { $ctx.Branding.UpdateBaseUrl = '' }   # never the core feed on a client build
+        if (Get-ToolkitClientRoot -Parent $ctx.Parent) {   # unreadable overlay: no self-update rather than a guess
+            $ctx.Branding.IsClient = $true; $ctx.Branding.UpdateBaseUrl = ''; $ctx.Branding.UpdateSource = 'none'
+        }
     }
 }
 
@@ -202,6 +230,35 @@ function Get-ToolkitLogoPath {
     if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { return $null }
     if ((Get-Item -LiteralPath $full).Length -gt 256KB) { return $null }
     return $full
+}
+
+function Get-ToolkitUpdateFeed {
+    # Resolved USB self-update settings:
+    #   Url          feed base URL ('' = no self-update)
+    #   KeepClient   true when updating a client toolkit from the core feed (protect client\)
+    #   LocalVersion the version to compare with the feed (core version for the core feed)
+    $ctx = Get-ToolkitContext
+    $url = Get-ToolkitBrandingValue 'UpdateBaseUrl'
+    $src = Get-ToolkitBrandingValue 'UpdateSource'
+    $isClient = [bool]($ctx -and $ctx.Branding -and $ctx.Branding.IsClient)
+    $keep = $isClient -and $src -eq 'core'
+    $local = if ($keep -and $ctx.CoreVersion) { $ctx.CoreVersion } elseif ($ctx) { $ctx.Version } else { '0.0.0' }
+    return @{ Url = $url; KeepClient = $keep; LocalVersion = $local }
+}
+
+function Get-ToolkitClientDataPath {
+    # Working folder for client modules during a session: client\Data (created on demand).
+    # Modules never write under dependencies\ (core files are verified against core-manifest.json
+    # before every build). This folder is NOT persistent: USB/SFX runs use a temp copy that is wiped
+    # on Quit. Reports and anything that must survive go to C:\_INFO\<Module>, like the core modules.
+    # Optional -Name returns (and creates) a sub folder.
+    param([string]$Name)
+    $clientRoot = Get-ToolkitClientRoot
+    if (-not $clientRoot) { throw 'No client folder - Get-ToolkitClientDataPath is only available in client builds.' }
+    $path = Join-Path $clientRoot 'Data'
+    if ($Name) { $path = Join-Path $path $Name }
+    if (-not (Test-Path -LiteralPath $path)) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
+    return $path
 }
 
 function Get-ToolkitModuleFiles {
@@ -249,7 +306,8 @@ function Get-ToolkitPayloadExcludes {
     # Keep in sync with the zip exclusions in .github/workflows/release.yml.
     param([Parameter(Mandatory)][string]$Root)
     return @{
-        Dirs  = @('tools', 'client.example') | ForEach-Object { Join-Path $Root $_ }
-        Files = @('AGENTS.md', 'CLAUDE.md', 'CLIENT_GUIDE.md') | ForEach-Object { Join-Path $Root $_ }
+        # client\_removed = wizard undo bin, client\Data = module working data: neither ships
+        Dirs  = @('tools', 'client.example', 'client\_removed', 'client\Data') | ForEach-Object { Join-Path $Root $_ }
+        Files = @('AGENTS.md', 'CLAUDE.md', 'CLIENT_GUIDE.md', 'Setup-Client.bat') | ForEach-Object { Join-Path $Root $_ }
     }
 }

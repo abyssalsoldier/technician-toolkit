@@ -127,11 +127,16 @@ function Update-UsbToolkit {
     # Checks the GitHub release feed for a newer toolkit and, if the technician agrees,
     # downloads it, verifies its SHA-256, mirrors it onto the USB and relaunches.
     # Runs before the main window opens, while the console is hidden, so all prompts are message boxes.
+    # -KeepClientFolder: client toolkit updating from the CORE feed - the local client\ folder is kept.
+    # -LocalVersion: version to compare with the feed (defaults to the toolkit's effective version).
     param(
-        [string]$UpdateBaseUrl
+        [string]$UpdateBaseUrl,
+        [switch]$KeepClientFolder,
+        [string]$LocalVersion
     )
 
     if (-not $script:Toolkit.IsUsb) { return }
+    if (-not $LocalVersion) { $LocalVersion = $script:Toolkit.Version }
 
     Add-Type -AssemblyName PresentationFramework
     try {
@@ -147,14 +152,14 @@ function Update-UsbToolkit {
         if ($remoteText -is [byte[]]) { $remoteText = [System.Text.Encoding]::UTF8.GetString($remoteText) }
         $remoteText = $remoteText.Trim()
         $remoteVersion = [version]$remoteText
-        $localVersion  = [version]$script:Toolkit.Version
+        $localVersion  = [version]$LocalVersion
     } catch {
-        Write-Host "Offline or update check failed. Continuing with USB version (v$($script:Toolkit.Version))..." -ForegroundColor Yellow
+        Write-Host "Offline or update check failed. Continuing with USB version (v$LocalVersion)..." -ForegroundColor Yellow
         return
     }
 
     if ($remoteVersion -le $localVersion) {
-        Write-Host "USB toolkit is up to date (v$($script:Toolkit.Version))." -ForegroundColor Green
+        Write-Host "USB toolkit is up to date (v$LocalVersion)." -ForegroundColor Green
         return
     }
 
@@ -220,21 +225,29 @@ function Update-UsbToolkit {
         & $fail "The downloaded package does not look like a $(Get-ToolkitProductName) release."
         return
     }
-    # A client USB must only take client releases: mirroring a core-only release would delete client\.
     $hasLocalClient  = Test-Path (Join-Path $script:Toolkit.Parent 'client')
     $hasSourceClient = Test-Path (Join-Path $sourceDir 'client')
-    if ($hasLocalClient -and -not $hasSourceClient) {
-        & $fail 'The downloaded release does not contain this toolkit''s client customizations (client folder), so it was not applied. Check UpdateBaseUrl in client\branding.json.'
+    if ($KeepClientFolder) {
+        # Core feed for a client toolkit: the release must be plain core; the local client\ is preserved below.
+        if ($hasSourceClient) {
+            & $fail 'The downloaded core release unexpectedly contains a client folder, so it was not applied.'
+            return
+        }
+    } elseif ($hasLocalClient -and -not $hasSourceClient) {
+        # A client USB on its own feed must only take client releases: a core-only release would delete client\.
+        & $fail 'The downloaded release does not contain this toolkit''s client customizations (client folder), so it was not applied. Check UpdateSource / UpdateBaseUrl in client\branding.json.'
         return
     }
 
     $common = @('/NFL', '/NDL', '/NJH', '/NJS', '/R:2', '/W:1')
-    # Pass 1: mirror everything except CustomInstallers, so files removed from the release are removed here too
+    # Pass 1: mirror everything except CustomInstallers, so files removed from the release are removed here too.
+    # With -KeepClientFolder the local client\ folder is excluded from the mirror (kept as is).
+    $keepClientArg = if ($KeepClientFolder) { @('client') } else { @() }
     $mirrorArgs = @(
         (ConvertTo-RobocopyPathArg $sourceDir),
         (ConvertTo-RobocopyPathArg $script:Toolkit.Parent),
         '/MIR',
-        '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', 'CustomInstallers', '_builds', '"System Volume Information"', '$RECYCLE.BIN',
+        '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', 'CustomInstallers', '_builds', '"System Volume Information"', '$RECYCLE.BIN') + $keepClientArg + @(
         '/XF', '.gitignore', '.toolkit-key', 'build.ps1'
     ) + $common
     $p1 = Start-Process robocopy -ArgumentList $mirrorArgs -Wait -PassThru -WindowStyle Hidden

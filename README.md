@@ -15,8 +15,15 @@ The toolkit is built on a dynamic, plug-and-play architecture:
 *   **Registration:** Modules must expose a `Register-<Name>` function returning a hash table with `Name`, `Label`, `RequiresAuth`, `EntryPoint`, and `UIDefinition`. The core orchestrator dynamically builds the navigation menu based on these functions.
 
 ### White-Label Core & Client Overlays
-This repository is the **core** and source of truth. Clients run their own branded toolkit from their own repo: a copy of this one with the core added as an `upstream` remote. All client-specific content lives in a single `client/` folder, which the core never ships:
-*   **Branding:** `client/branding.json` sets the product name, accent color, logo, support contact, update feed and hidden modules.
+This repository is the **core** and source of truth. Clients run their own branded toolkit. All client-specific content lives in a single `client/` folder, which the core never ships. Clients don't need GitHub: they extract `client-kit.zip` (a release asset) and run **`Setup-Client.bat`**, a wizard for:
+*   branding with a live preview
+*   adding, creating, removing, hiding and locking modules
+*   installers and the update mode
+*   checks, and building the exe, locked exe or USB
+
+GitHub-based client repos (core as an `upstream` remote) remain supported. What the `client/` folder holds:
+*   **Branding:** `client/branding.json` sets the product name, accent color, logo, support contact, update mode (`core` = automatic core updates that keep `client/`, `custom`, `none`), hidden modules and password-locked modules (`LockedModules`).
+*   **Core integrity:** `dependencies/core-manifest.json` checksums every core file. Client builds are refused when core was modified. Core maintainers regenerate it with `.\build.ps1 -UpdateCoreManifest`, and CI fails when it's stale.
 *   **Modules & installers:** `client/Modules/` (same `Register-<Name>` contract; a matching `Name` replaces a core module) and `client/CustomInstallers/`.
 *   **Versioning & releases:** `client/version.txt` drives the client's own GitHub Releases and USB self-update. A client USB refuses any update that would remove `client/`.
 *   **Updating core:** `git fetch upstream && git merge upstream/master`. It merges cleanly because core never touches `client/`. `tools/Test-ClientOverlay.ps1 -CheckCore` validates the overlay and fails if any core file was edited.
@@ -82,11 +89,15 @@ endpoint-build-toolkit/
 │   ├── Core/                           Infrastructure (Crypto, Auth, USB Detection, ClientOverlay)
 │   ├── UI/                             XAML layouts and Runspace synchronization
 │   ├── Modules/                        Feature Modules (see the Modules table above)
-│   ├── Agent/                          Admin tools (e.g., Export-LockedToolkit.ps1)
+│   ├── Agent/                          Admin tools (Export-LockedToolkit.ps1, CoreIntegrity.ps1), not loaded at runtime
 │   ├── CustomInstallers/               Bundled static offline installers (ODT/ is used by Debloat)
-│   └── version.txt                     Core version (bump to publish a core release)
+│   ├── version.txt                     Core version (bump to publish a core release)
+│   └── core-manifest.json              SHA-256 of every core file (build.ps1 -UpdateCoreManifest)
 ├── client/                             Client overlay. Only in client repos, never in core (see CLIENT_GUIDE.md)
 ├── client.example/                     Template for client/ (repo-only, not shipped)
+├── Setup-Client.bat                    Client Setup wizard (repo-only, not shipped)
+├── tools/ClientSetup/                  The wizard (repo-only, not shipped)
+├── tools/OverlayValidation.ps1         Module/branding checks shared by the wizard and validator (repo-only)
 ├── tools/Test-ClientOverlay.ps1        Overlay validator + core-integrity check (repo-only, not shipped)
 ├── CLIENT_GUIDE.md                     Setup and rules for client repos (repo-only, not shipped)
 ├── AGENTS.md / CLAUDE.md               Instructions for AI agents (repo-only, not shipped)

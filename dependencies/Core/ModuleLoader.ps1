@@ -43,6 +43,29 @@ function Get-RegisteredModules {
     }
 
     $registered = @($byName.Values | Where-Object { $disabled -notcontains $_.Name })
+
+    # MinCoreVersion: a module built for a newer core is skipped (logged), never forcing a core patch
+    $ctx = Get-ToolkitContext
+    $coreVersion = $null
+    if ($ctx -and $ctx.CoreVersion) { [void][version]::TryParse($ctx.CoreVersion, [ref]$coreVersion) }
+    if ($coreVersion) {
+        $registered = @($registered | Where-Object {
+            $need = $null
+            if ($_.MinCoreVersion -and [version]::TryParse([string]$_.MinCoreVersion, [ref]$need) -and $need -gt $coreVersion) {
+                if ($null -ne $ctx.OverlayWarnings) { [void]$ctx.OverlayWarnings.Add("Module '$($_.Label)' needs core v$need or later (this is v$coreVersion) - skipped.") }
+                $false
+            } else { $true }
+        })
+    }
+
+    # LockedModules (branding.json): a client can add locks, never remove one a module sets itself
+    $locked = @(Get-ToolkitBrandingValue 'LockedModules')
+    if ($locked.Count -gt 0) {
+        foreach ($m in $registered) {
+            if ($locked -contains '*' -or $locked -contains $m.Name) { $m.RequiresAuth = $true }
+        }
+    }
+
     return $registered | Sort-Object { $_.SortOrder }
 }
 

@@ -6,12 +6,20 @@
 #   .\build.ps1 -Extract     # Also extracts the zip for inspection
 #   .\build.ps1 -Dev         # Copies files directly (no zip) — fastest for testing
 #   .\build.ps1 -Test        # Same as -Dev but also launches the toolkit
+#   .\build.ps1 -SFX         # Zip + self-extracting EndpointToolkit.exe
+#
+# Core integrity: every build checks core files against dependencies\core-manifest.json.
+# With a client\ folder the build is REFUSED when core was changed. Core maintainers:
+#   .\build.ps1 -UpdateCoreManifest   # regenerate the manifest after changing core (then commit it)
+#   -AllowModifiedCore                # build anyway (core maintainers only, never in client repos)
 
 param(
     [switch]$Extract,
     [switch]$Dev,
     [switch]$Test,
-    [switch]$SFX
+    [switch]$SFX,
+    [switch]$UpdateCoreManifest,
+    [switch]$AllowModifiedCore
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,9 +39,21 @@ function ConvertTo-RobocopyPathArg {
 $repoRoot = $PSScriptRoot
 $buildsRoot = Join-Path $repoRoot "_builds"
 
-# Read version
-# Client overlay helpers (branding, effective version, repo-only excludes)
+# Client overlay helpers (branding, effective version, repo-only excludes) + core integrity
 . (Join-Path $repoRoot "dependencies\Core\ClientOverlay.ps1")
+. (Join-Path $repoRoot "dependencies\Agent\CoreIntegrity.ps1")
+
+if ($UpdateCoreManifest) {
+    if (Test-Path (Join-Path $repoRoot "client")) {
+        Write-Host "Refusing to update the core manifest in a client repo (client\ exists). Only core maintainers regenerate it." -ForegroundColor Red
+        exit 1
+    }
+    $count = New-ToolkitCoreManifest -Root $repoRoot
+    Write-Host "core-manifest.json updated ($count core files). Commit it with your core changes." -ForegroundColor Green
+    exit 0
+}
+if (-not (Assert-ToolkitCoreIntegrity -Root $repoRoot -AllowModifiedCore:$AllowModifiedCore)) { exit 1 }
+
 $overlayWarnings = [System.Collections.ArrayList]::new()
 $branding = Get-ToolkitBranding -Parent $repoRoot -Warnings $overlayWarnings
 foreach ($w in $overlayWarnings) { Write-Host "WARNING: $w" -ForegroundColor Yellow }

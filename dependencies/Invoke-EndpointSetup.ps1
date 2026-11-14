@@ -92,8 +92,10 @@ if (Test-Path $uiPath) {
 # Updates come from the GitHub releases of abyssalsoldier/Endpoint-toolkit (published by .github/workflows/release.yml).
 # When launched from a USB, the toolkit is copied to a local temp folder and this running instance is
 # re-pointed at it, so the drive can be unplugged at any point after startup.
-# The feed comes from client\branding.json UpdateBaseUrl in client builds (empty = no self-update).
-$UpdateBaseUrl = Get-ToolkitBrandingValue 'UpdateBaseUrl'
+# Feed from Get-ToolkitUpdateFeed: core feed (default), or per client\branding.json UpdateSource
+# (core = core feed but keep client\, custom = client's own feed, none = no self-update).
+$updateFeed = Get-ToolkitUpdateFeed
+$UpdateBaseUrl = $updateFeed.Url
 $localCopyRoot = $null
 if ($Localized -and $UsbDrive) {
     # Legacy relaunch path (kept for compatibility)
@@ -104,7 +106,9 @@ if ($Localized -and $UsbDrive) {
 } else {
     Test-UsbExecution
     if ($script:Toolkit.IsUsb) {
-        if ($UpdateBaseUrl) { Update-UsbToolkit -UpdateBaseUrl $UpdateBaseUrl }
+        if ($UpdateBaseUrl) {
+            Update-UsbToolkit -UpdateBaseUrl $UpdateBaseUrl -KeepClientFolder:$updateFeed.KeepClient -LocalVersion $updateFeed.LocalVersion
+        }
 
         $usbSerial = Get-DriveSerial -DriveLetter $script:Toolkit.UsbDrive
         # Expand 8.3 short names (e.g. JESSER~1); module discovery compares against long file paths
