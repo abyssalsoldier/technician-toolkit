@@ -121,8 +121,9 @@ function Save-WizardState {
     $out.SupportContact = $state.SupportContact
     $out.UpdateSource = $state.UpdateSource
     $out.UpdateBaseUrl = if ($state.UpdateSource -eq 'custom') { $state.UpdateBaseUrl } else { '' }
+    # @(...) around the whole expression: an if/else returning an empty array would collapse to $null
     $out.DisabledModules = @($state.Disabled | Sort-Object)
-    $out.LockedModules = if ($state.LockAll) { @('*') } else { @($state.Locked | Sort-Object) }
+    $out.LockedModules = @(if ($state.LockAll) { '*' } else { $state.Locked | Sort-Object })
     $out.ExeName = $state.ExeName
     foreach ($k in $state.Extra.Keys) { if ($k -ne '_readme') { $out[$k] = $state.Extra[$k] } }
 
@@ -140,7 +141,7 @@ $win = [System.Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlTextRe
 $ui = @{}
 foreach ($n in 'txtCoreInfo', 'lstSteps', 'txtWelcome', 'bdrIntegrity', 'txtIntegrityTitle', 'txtIntegrityDetail', 'btnImport', 'btnOpenGuide',
                'imgPreviewLogo', 'txtPreviewName', 'txtPreviewVersion', 'txtProductName', 'txtAccent', 'pnlSwatches', 'btnLogo', 'btnLogoRemove', 'txtLogoInfo', 'txtSupport', 'txtVersion',
-               'btnAddModule', 'btnLockAll', 'btnUnlockAll', 'txtNewModule', 'btnNewModule', 'pnlModules',
+               'btnAddModule', 'btnLockAll', 'btnUnlockAll', 'btnModuleGuide', 'txtNewModule', 'btnNewModule', 'pnlModules',
                'btnAddInstaller', 'txtInstallerTotal', 'pnlInstallers',
                'rbCore', 'rbCustom', 'rbNone', 'pnlCustom', 'txtFeedUrl', 'txtGitHubRepo', 'btnFillGitHub',
                'btnCheck', 'btnBuildExe', 'btnMakeUsb', 'btnExport', 'btnOpenBuilds', 'pwd1', 'pwd2', 'btnBuildLocked', 'txtOutput',
@@ -412,6 +413,54 @@ $ui.btnNewModule.Add_Click({
         }
     } finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
 })
+function New-ModuleGuideText {
+    # Fills tools\ClientSetup\module-guide.template.md with this client's details: a self-contained
+    # brief for an AI coding agent that has never seen the toolkit.
+    $template = Join-Path $PSScriptRoot 'module-guide.template.md'
+    if (-not (Test-Path $template)) { throw 'module-guide.template.md is missing from tools\ClientSetup.' }
+    $product = $ui.txtProductName.Text.Trim(); if (-not $product) { $product = 'Endpoint Toolkit' }
+    $prefix = (($product -split '\s+') | Where-Object { $_ -match '[A-Za-z]' } | Select-Object -First 1) -replace '[^A-Za-z0-9]', ''
+    if (-not $prefix -or $prefix -eq 'Endpoint') { $prefix = 'Client' }
+    if ($prefix -match '^[0-9]') { $prefix = "C$prefix" }
+
+    $core = Get-OvCoreInventory -Root $Root
+    $coreRows = @('| Name | Label |', '|---|---|') + @($core.Modules | ForEach-Object { "| ``$($_.Name)`` | $($_.Label) |" })
+    $clientMods = @(Get-ClientModuleInfo)
+    $clientRows = if ($clientMods.Count) { @($clientMods | ForEach-Object { "- ``$($_.Name)``: $($_.Label) ($(Split-Path $_.File -Leaf))" }) } else { @('- (none yet)') }
+    $fnList = (@($core.Functions.Keys | Sort-Object) | ForEach-Object { "``$_``" }) -join ', '
+
+    $exampleFile = Join-Path $Root 'client.example\Modules\Example-Module.ps1'
+    $example = if (Test-Path $exampleFile) { (Get-Content $exampleFile -Raw -Encoding UTF8).Trim() } else { '# (template not found in this kit)' }
+    $example = $example.Replace('ClientExample', "${prefix}Example").Replace('Client Example', "$prefix Example").Replace('Example-Module.ps1', "$prefix-Example.ps1")
+
+    $text = Get-Content $template -Raw -Encoding UTF8
+    $values = [ordered]@{
+        '{{Template}}' = $example; '{{CoreModules}}' = ($coreRows -join "`r`n"); '{{ClientModules}}' = ($clientRows -join "`r`n")
+        '{{CoreFunctions}}' = $fnList; '{{ProductName}}' = $product; '{{Prefix}}' = $prefix
+        '{{CoreVersion}}' = $coreVer; '{{AccentColor}}' = $ui.txtAccent.Text.Trim(); '{{Date}}' = (Get-Date -Format 'yyyy-MM-dd')
+    }
+    foreach ($k in $values.Keys) { $text = $text.Replace($k, [string]$values[$k]) }
+    return $text
+}
+
+$ui.btnModuleGuide.Add_Click({
+    try { $text = New-ModuleGuideText } catch { Show-Msg "Could not create the guide: $($_.Exception.Message)" 'OK' 'Error' | Out-Null; return }
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $safe = ($ui.txtProductName.Text.Trim() -replace '[^A-Za-z0-9]+', '-').Trim('-'); if (-not $safe) { $safe = 'toolkit' }
+    $dlg.FileName = "$safe-MODULE-GUIDE.md"; $dlg.Filter = 'Markdown (*.md)|*.md'
+    $dlg.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
+    if (-not $dlg.ShowDialog($win)) { return }
+    $full = [System.IO.Path]::GetFullPath($dlg.FileName)
+    if ($full.StartsWith($Root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Show-Msg 'Save the guide outside the toolkit folder (for example in Documents or your module project). Extra files inside the toolkit folder block builds.' 'OK' 'Warning' | Out-Null; return
+    }
+    [System.IO.File]::WriteAllText($full, $text, (New-Object System.Text.UTF8Encoding $false))
+    Set-Status "Module guide saved: $full"
+    if ((Show-Msg "Saved $(Split-Path $full -Leaf).`n`nGive this file to your AI coding agent (for example put it in the folder where you write the module, or paste it into the chat). When the module is ready, add it here with 'Add module file...'.`n`nOpen it now?" 'YesNo' 'Question') -eq 'Yes') {
+        Start-Process notepad.exe -ArgumentList "`"$full`""
+    }
+})
+
 $ui.btnLockAll.Add_Click({ $state.LockAll = $true; Save-WizardState -Quiet; Update-ModuleList })
 $ui.btnUnlockAll.Add_Click({ $state.LockAll = $false; $state.Locked.Clear(); Save-WizardState -Quiet; Update-ModuleList })
 

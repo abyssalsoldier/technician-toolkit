@@ -140,6 +140,8 @@
                         <Button Name="btnAddModule" Content="Add module file..."/>
                         <Button Name="btnLockAll" Content="Lock all"/>
                         <Button Name="btnUnlockAll" Content="Unlock all"/>
+                        <Button Name="btnModuleGuide" Content="Export guide for AI agent..."
+                                ToolTip="Save a .md file that explains to an AI coding agent how modules work and how to write one for this toolkit"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <TextBox Name="txtNewModule" Width="240"/>

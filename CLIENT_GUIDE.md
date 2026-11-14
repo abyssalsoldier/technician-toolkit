@@ -57,6 +57,14 @@ The **Modules** page lists every core module and every module of yours:
   It warns about code that runs at load time, `Read-Host`, and dependence on the user profile (these break under ConnectWise / SYSTEM).
 - **Create new module from template:** type a name, for example `Acme RMM`. The wizard creates `client\Modules\AcmeRMM.ps1` from the template and offers to open it.
 - **Remove:** moves your module file into `client\_removed\` (never shipped), so you can restore it later. Core modules can be hidden, not removed.
+- **Export guide for AI agent...:** saves a self-contained `.md` file (for example `Acme-IT-Toolkit-MODULE-GUIDE.md`) to give to an AI coding agent. It contains:
+  - the module contract, API and rules
+  - the exact checks the wizard runs
+  - a template
+  - your product name, core version and installed modules
+  - the core function names to avoid
+
+  Save it outside the toolkit folder, have the agent write the module, then add it with **Add module file...**.
 
 ### Writing a module
 
@@ -186,6 +194,7 @@ git add client; git commit -m "Add Acme client"; git push
 
 ### Core 2.1.0
 - New: **Client Setup wizard** (`Setup-Client.bat`). Branding with a live preview, add/create/remove modules, Show and Lock per module, installers, update mode, checks, building the exe and locked exe, USB, export/import of client packages. No GitHub needed.
+- New: **Export guide for AI agent** on the wizard's Modules page (a self-contained module-writing brief as `.md`).
 - New: **`LockedModules`**. Lock any core or client module behind the password, per client (default: nothing locked).
 - New: **`UpdateSource`**. `core` gives automatic core updates that keep `client\`; `custom` uses your own feed; `none` turns updates off.
 - New: **core integrity manifest** (`dependencies\core-manifest.json`). Builds refuse modified core files.
