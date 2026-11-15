@@ -253,6 +253,12 @@ Then in the repo's **Settings → Actions → General**, tick **Allow GitHub Act
 
 ## Changelog
 
+### Core 2.2.2
+- Changed: the core's release branch is now **`main`** (it was `master`; day-to-day core work is on `dev`). GitHub client repos update with `git fetch upstream --prune` and `git merge upstream/main`. Your own repo can keep releasing from `master`.
+- New: every release also has the ready-to-run **`EndpointToolkit.exe`**, next to `latest.zip` and `client-kit.zip`.
+- New (GitHub client repos): the **Core update** workflow opens a weekly pull request into `dev` when a new core is out. Private client repos get their own **`client-kit.zip`** (core plus their `client\` folder) with every release. Releases built on an older core show a warning. See **Advanced: using GitHub**.
+- New: a download page (`website/`) for the exe, `latest.zip` and `client-kit.zip`.
+
 ### Core 2.2.1 (security fixes)
 - Fixed: under ConnectWise / SYSTEM, another user of the PC could prepare `C:\Windows\Temp\EndpointToolkit_SC` so their code ran as SYSTEM when the exe started. The exe now refuses to start if that folder can't be removed and secured. **Rebuild your exes and replace them in ConnectWise Toolbox.**
 - Fixed: a locked kit with no locked modules or secrets accepted some wrong passwords. Key files (`.sfx-key`, `.toolkit-key`) now use a random salt and a tamper check. Kits made with older versions keep working, and the wrong-password problem is fixed for them too, but rebuild them to get the stronger key file.
@@ -263,9 +269,6 @@ Then in the repo's **Settings → Actions → General**, tick **Allow GitHub Act
 - New: the wizard's **Build exe + folder** (was **Build exe**) also makes a ready-to-run folder, `_builds\v<version>_<date>\EndpointToolkit\`, that you start with its `Launch.bat`. From the command line: `.\build.ps1 -Folder`.
 - Changed: the plain exe, folder build and zip (`build.ps1` without `-Dev`/`-Test`) **leave out locked modules**, because they have no password. Before, they included them unprotected. Ship locked modules with **Build locked exe** or a USB.
 - New: locked modules show a lock icon in the menu, as well as `[LOCKED]`.
-- Changed: the core's release branch is now **`main`** (it was `master`; day-to-day core work is on `dev`). GitHub client repos update with `git fetch upstream --prune` and `git merge upstream/main`. Your own repo can keep releasing from `master`.
-- New: every release also has the ready-to-run **`EndpointToolkit.exe`**, next to `latest.zip` and `client-kit.zip`.
-- New (GitHub client repos): the **Core update** workflow opens a weekly pull request into `dev` when a new core is out. Private client repos get their own **`client-kit.zip`** (core plus their `client\` folder) with every release. Releases built on an older core show a warning. See **Advanced: using GitHub**.
 - New: **Output folder** on the Check & Build page (with **Browse...** and **Default**) chooses where the exe, folder build and locked exe go. Command line: `-OutputPath`.
 - New: modules list the secrets they need with `Secrets = @('Name', ...)` in their Register function. The Secrets page has **Import secrets from module...**, and adding a module offers to add its secrets. The checks warn when a module reads a secret it doesn't list.
 

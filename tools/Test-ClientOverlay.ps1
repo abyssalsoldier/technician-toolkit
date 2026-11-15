@@ -23,7 +23,7 @@
 param(
     [string]$Path,
     [switch]$CheckCore,
-    [string]$Upstream = 'upstream/main',   # the core publishes from main (it was master before v2.2.1)
+    [string]$Upstream = 'upstream/main',   # the core publishes from main (it was master before v2.2.2)
     [switch]$SkipIntegrity    # core maintainers / CI on the core repo only
 )
 

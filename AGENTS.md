@@ -33,7 +33,7 @@ If it's unclear, ask the user before editing anything.
 ```powershell
 git status                                  # must be clean first
 git fetch upstream
-git merge upstream/main                     # clean if the boundary was respected (the core branch was master before v2.2.1)
+git merge upstream/main                     # clean if the boundary was respected (the core branch was master before v2.2.2)
 .\tools\Test-ClientOverlay.ps1 -CheckCore   # must exit 0
 ```
 - **Conflict in a path outside `client/`:** resolve with `git checkout --theirs -- <path>` (take core), then `git add <path>`. Never keep a local version of a core file. Tell the user which files conflicted, because a local core edit existed.
@@ -44,7 +44,7 @@ git merge upstream/main                     # clean if the boundary was respecte
 - Repos with `dev` and `main`: work on `dev`; merging `dev` into `main` releases (push only if the user asks).
 
 ### Ship a release
-Bump `client/version.txt` (semantic version, always higher than the last release), commit, and push to your release branch (`main`, or `master` in client repos created before v2.2.1). CI publishes `v<version>` to this repo's Releases. Bump the patch for fixes and core updates, the minor for new modules or features, the major for breaking changes to how technicians use the toolkit.
+Bump `client/version.txt` (semantic version, always higher than the last release), commit, and push to your release branch (`main`, or `master` in client repos created before v2.2.2). CI publishes `v<version>` to this repo's Releases. Bump the patch for fixes and core updates, the minor for new modules or features, the major for breaking changes to how technicians use the toolkit.
 
 ### Before every commit
 ```powershell
