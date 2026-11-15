@@ -246,10 +246,8 @@ function Start-ToolkitGUI {
     $window.ShowDialog() | Out-Null
 
     # --- Cleanup ---
-    $Global:SyncHash.Toolkit.Config = $null
     $Global:SyncHash.ToolkitKey = $null
     $Global:SyncHash.Toolkit.Session = $null
-    $script:Toolkit.Config = $null
     $script:ToolkitKey = $null
 }
 

@@ -1,37 +1,5 @@
 # Module: Crypto.ps1
 
-function Unprotect-ToolkitConfig {
-    param(
-        [string]$Password,
-        [string]$EncPath
-    )
-
-    if (-not (Test-Path $EncPath)) {
-        throw "Encrypted config not found at '$EncPath'."
-    }
-
-    $payload = [Convert]::FromBase64String((Get-Content $EncPath -Raw).Trim())
-
-    # File format: [16 bytes salt][16 bytes IV][ciphertext]
-    $salt = $payload[0..15]
-    $iv = $payload[16..31]
-    $ciphertext = $payload[32..($payload.Length - 1)]
-
-    # Derive AES key from password via PBKDF2
-    $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($Password, $salt, 100000, "SHA256")
-    $aesKey = $derive.GetBytes(32)
-
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    $aes.Key = $aesKey
-    $aes.IV = $iv
-    $decryptor = $aes.CreateDecryptor()
-    $plainBytes = $decryptor.TransformFinalBlock($ciphertext, 0, $ciphertext.Length)
-    $aes.Dispose()
-
-    $json = [System.Text.Encoding]::UTF8.GetString($plainBytes)
-    return ($json | ConvertFrom-Json)
-}
-
 function Get-DriveSerial {
     param([string]$DriveLetter)
     try {

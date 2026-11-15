@@ -38,7 +38,6 @@ $script:Toolkit = @{
     IsUsb         = $false
     UsbDrive      = $null
     UsbSerial     = $null
-    Config        = $null
     Authenticated = $false
     Session       = $null
 }
@@ -59,10 +58,6 @@ if (-not $script:Toolkit.Version) { $script:Toolkit.Version = "0.0.0" }
 $script:ToolkitKey = $null
 
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-
-# Create working directory
-$workDir = "$env:TEMP\InstallApps"
-New-Item -ItemType Directory -Path $workDir -Force | Out-Null
 
 # --- Load Core modules ---
 $corePath = "$PSScriptRoot\Core"
@@ -148,19 +143,17 @@ Start-ToolkitGUI
 # --- Cleanup: wipe sensitive data from memory and disk ---
 Write-Host "Cleaning up sensitive data..." -ForegroundColor Yellow
 
-$script:Toolkit.Config = $null
 $script:ToolkitKey = $null
 $script:Toolkit.Session = $null
 $script:Toolkit.Secrets = $null
 $script:Toolkit.LockedModuleTexts = $null
 if ($Global:SyncHash) {
-    $Global:SyncHash.Toolkit.Config = $null
     $Global:SyncHash.ToolkitKey = $null
     $Global:SyncHash = $null
 }
 
 $tempPaths = @(
-    "$env:TEMP\InstallApps",
+    "$env:TEMP\InstallApps",                     # created by toolkits before 2.2.1; removed if left over
     "$env:TEMP\endpoint-toolkit-update",
     "$env:TEMP\endpoint-toolkit-update.zip"
 )

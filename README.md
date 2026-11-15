@@ -86,10 +86,10 @@ endpoint-build-toolkit/
 ├── Launch.bat                          Entry point (elevates, prioritizes PowerShell 7)
 ├── dependencies/
 │   ├── Invoke-EndpointSetup.ps1        WPF orchestrator & cleanup routine
-│   ├── Core/                           Infrastructure (Crypto, Auth, USB Detection, ClientOverlay)
+│   ├── Core/                           Infrastructure (Crypto, LockedKit: locked kits and secrets, USB Detection, ClientOverlay)
 │   ├── UI/                             XAML layouts and Runspace synchronization
 │   ├── Modules/                        Feature Modules (see the Modules table above)
-│   ├── Agent/                          Admin tools (Export-LockedToolkit.ps1, CoreIntegrity.ps1), not loaded at runtime
+│   ├── Agent/                          Build tools (Export-LockedToolkit, LockedPayload, CoreIntegrity, ModuleMetadata), not loaded at startup
 │   ├── CustomInstallers/               Bundled static offline installers (ODT/ is used by Debloat)
 │   ├── version.txt                     Core version (bump to publish a core release)
 │   └── core-manifest.json              SHA-256 of every core file (build.ps1 -UpdateCoreManifest)
