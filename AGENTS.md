@@ -80,6 +80,8 @@ Available helpers (from `dependencies/Core/ClientOverlay.ps1` and `dependencies/
 | `Get-ToolkitClientRoot` | full path of `client/` at runtime (it may be a temp copy) |
 | `Get-ToolkitClientDataPath ['sub']` | working folder for files a module writes during a session (not persistent). Durable output goes to `C:\_INFO\<Module>` |
 | `Get-ToolkitProductName`, `Get-ToolkitBrandingValue <Key>` | branding values |
+| `Get-ToolkitSecret '<Name>'` | a value from the wizard's Secrets page (`$null` while the kit is locked). Never log, display or write it. |
+| `foreach ($sb in Get-ToolkitModuleScripts) { . $sb }` | load every module in your own runspace, including locked ones that only exist in memory |
 | `$Global:SyncHash` | shared state: `.Window`, `.Toolkit` (Root, Parent, Version, Authenticated, IsUsb), `.ActionContent` |
 
 Required behavior:
@@ -88,15 +90,16 @@ Required behavior:
 - **ConnectWise Toolbox / SYSTEM safe:** no `Read-Host`, no console prompts, no `$env:USERPROFILE` or `HKCU` assumptions, no mapped drives. Use WPF controls for input.
 - **Lightweight:** no new PowerShell modules from the Gallery, no large binaries unless the user asks. Installers go in `client/CustomInstallers/`. Warn the user about anything over ~25 MB.
 - **Never write, move or delete anything under `dependencies/`** or elsewhere in core. The validator scans for this, and the manifest catches anything it misses. Use `Get-ToolkitClientDataPath` or `C:\_INFO\`. If the module API above doesn't cover what's needed, tell the user it needs a core feature. Don't work around it.
-- **No secrets** in code or files: no RMM tenant or site keys, tokens or passwords. Ask the technician in the UI, or tell the user where they must supply it.
-- Paths: build them with `Join-Path`. Never hardcode a drive letter or the toolkit folder. To load your own file inside a runspace, use `Join-Path (Get-ToolkitClientRoot) 'Modules\<File>.ps1'`, not `$toolkitRoot\Modules`.
+- **No secrets** in code or files: no RMM tenant or site keys, tokens or passwords. Tell the user to add each one on the wizard's **Secrets** page (give the exact name), read it with `Get-ToolkitSecret '<Name>'`, and set `RequiresAuth = $true` (or tell the user to tick Lock). Never touch `client/secrets.dat` (Windows DPAPI, per user) and never commit it.
+- **Locked modules run from memory.** In a locked exe or USB their `.ps1` is inside an encrypted vault (`client/.locked/vault.bin`), not on disk. Never build paths from the module file's own location, and load modules in a runspace with `Get-ToolkitModuleScripts`, not by file path.
+- Paths: build them with `Join-Path`. Never hardcode a drive letter or the toolkit folder. Client files (installers, resources) are under `Get-ToolkitClientRoot`, not `$toolkitRoot\Modules`.
 
 ## 5. Things not to do (either repo)
 
 - Don't change entry points or runtime layout: `Launch.bat`, `dependencies\Invoke-EndpointSetup.ps1` (path and parameters), the SFX bootstrap, the temp folder names `EndpointToolkit_SC` / `EndpointToolkit_<guid>`, the cleanup routine, or the exe names. ConnectWise Toolbox entries and existing USB sticks depend on them.
 - Don't hardcode the update URL. It comes from `branding.json` (client) or `Get-ToolkitCoreDefaults` (core).
 - Don't point a client's `UpdateBaseUrl` at the core release feed.
-- Don't commit `*.key`, `.toolkit-key`, `.sfx-key`, `_builds/` or zips.
+- Don't commit `*.key`, `.toolkit-key`, `.sfx-key`, `client/secrets.dat`, `client/secrets.pkg`, `_builds/` or zips. (`client/secrets-names.json` holds names only and may be committed.)
 - Don't push, tag or publish releases unless the user asks. A push to `master` with a bumped version publishes a release automatically.
 
 ## 6. Core repo (maintainers)
@@ -107,7 +110,8 @@ The core is the source of truth for every client. Clients merge it without revie
 - **The module API is the contract.** The functions listed in section 4 plus `branding.json` keys are what clients build on. Add to them (new helpers, new keys) instead of telling clients to patch core. Breaking changes bump `OverlayApiVersion` in `Get-ToolkitCoreDefaults` and the major version.
 - New repo-only files must also be added to `Get-ToolkitPayloadExcludes` and the release.yml exclusions (the wizard, `Setup-Client.bat`, `tools/`, `client.example/`, the docs, `client/_removed`, `client/Data` are already there).
 - **Never commit a `client/` folder to core.** Test with a local `client/` (copy `client.example`) and delete it before committing.
-- **Keep the overlay API backward compatible:** the `Register-*` keys, the branding keys, and the public functions in `dependencies/Core/ClientOverlay.ps1` (`Get-ToolkitClientRoot`, `Get-ToolkitBranding*`, `Get-ToolkitAccent`, `New-ToolkitBrush`, `Get-ToolkitModuleFiles`, `Get-ToolkitModulePaths`, `Get-ToolkitInstallerPaths`, `Get-ToolkitPayloadExcludes`, `Get-ToolkitVersionInfo`), plus `Start-ModuleInBackground` and `Write-Log`. A breaking change needs a major version bump and a note in the CLIENT_GUIDE changelog.
+- **Keep the overlay API backward compatible:** the `Register-*` keys, the branding keys, and the public functions in `dependencies/Core/ClientOverlay.ps1` (`Get-ToolkitClientRoot`, `Get-ToolkitBranding*`, `Get-ToolkitAccent`, `New-ToolkitBrush`, `Get-ToolkitModuleFiles`, `Get-ToolkitModuleScripts`, `Get-ToolkitModulePaths`, `Get-ToolkitInstallerPaths`, `Get-ToolkitPayloadExcludes`, `Get-ToolkitVersionInfo`), `Get-ToolkitSecret` (LockedKit.ps1), plus `Start-ModuleInBackground` and `Write-Log`. A breaking change needs a major version bump and a note in the CLIENT_GUIDE changelog.
+- **Locked kits** (locked exe, USB): `dependencies/Agent/LockedPayload.ps1` moves locked client modules and the wizard secrets into an encrypted vault with a file manifest; `dependencies/Core/LockedKit.ps1` unlocks it on demand and refuses kits whose files changed. Any new file a kit writes at runtime under `dependencies/` or `client/` must be added to `Test-ToolkitIntegritySkip`, or unlocking fails.
 - Load modules through `Get-ToolkitModuleFiles` and installers through `Get-ToolkitInstallerPaths`, so client folders are always included.
 - New UI uses `Get-ToolkitAccent` / `New-ToolkitBrush`, not `#89B4FA`. XAML may use `#FF89B4FA`, because `Load-XamlWindow` swaps it for the brand color.
 - New repo-only files (docs, tooling) must be excluded from payloads in **both** `Get-ToolkitPayloadExcludes` (ClientOverlay.ps1) and the zip step in `.github/workflows/release.yml`.

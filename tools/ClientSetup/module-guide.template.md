@@ -40,7 +40,7 @@ Rules for the hashtable:
 - `Name`, `Label`, `EntryPoint`, `SortOrder` are required. `Name`, `EntryPoint`, `UIDefinition` and `SortOrder` must be **plain literal values** (no variables or expressions), because the checker reads them without running the file.
 - `EntryPoint` and `UIDefinition` must name functions **defined in the same file**.
 - Reusing the `Name` of a core module **replaces** that core module. Only do this when the user asks for it.
-- Leave `RequiresAuth = $false` unless the module must always be locked. The user can lock any module per build in the wizard.
+- Leave `RequiresAuth = $false` unless the module must always be locked. The user can lock any module per build in the wizard. A module that reads secrets must be locked (`RequiresAuth = $true`, or Lock in the wizard).
 
 **How it runs:**
 1. At launch, and inside every background task, the toolkit loads core modules first, then client modules, by dot-sourcing them. **Anything at the top level runs every time.**
@@ -61,6 +61,7 @@ Rules for the hashtable:
 | `Get-ToolkitClientDataPath ['subfolder']` | Working folder for files written **during this session**. Wiped on Quit for USB/exe runs. |
 | `C:\_INFO\<ModuleName>\` | Where reports and anything that must survive go (the core modules do the same) |
 | `Get-ToolkitProductName`, `Get-ToolkitBrandingValue '<Key>'` | Branding values |
+| `Get-ToolkitSecret '<Name>'` | A value the user entered on the wizard's **Secrets** page (RMM site key, token, password), or `$null` while the kit is locked. Never log, display or write it to a file. |
 | `$Global:SyncHash.Window` | Main window. Use `.Dispatcher.Invoke([action]{ ... })` to update UI from a background task. |
 | `$Global:SyncHash.Toolkit` | `.Version`, `.CoreVersion`, `.Authenticated`, `.IsUsb`, `.Root` (read-only use), `.Parent` |
 | `$Global:SyncHash.ActionContent` | The content area your `UIDefinition` element is shown in |
@@ -70,7 +71,7 @@ Inside a background runspace the shared state is also available as `$SyncHash`. 
 $toolkitRoot = $SyncHash.Toolkit.Root
 Get-ChildItem "$toolkitRoot\Core" -Filter *.ps1 -File | ForEach-Object { . $_.FullName }
 Get-ChildItem "$toolkitRoot\UI"   -Filter *.ps1 -File | ForEach-Object { . $_.FullName }
-. (Join-Path (Get-ToolkitClientRoot) 'Modules\{{Prefix}}-RmmAgent.ps1')   # your own file - NOT $toolkitRoot\Modules
+foreach ($sb in Get-ToolkitModuleScripts) { . $sb }   # all modules, including locked ones (they only exist in memory)
 ```
 `Start-ModuleInBackground` is simpler and is preferred.
 
@@ -83,7 +84,7 @@ Get-ChildItem "$toolkitRoot\UI"   -Filter *.ps1 -File | ForEach-Object { . $_.Fu
 3. **No console input:** no `Read-Host`, `pause` or `Get-Credential`. The console is hidden. Ask for input with WPF controls (TextBox, PasswordBox) in your `UIDefinition`.
 4. **Assume SYSTEM:** no `HKCU:`, `$env:USERPROFILE`, `$env:APPDATA`, `$HOME`, or mapped drives. Use `HKLM:`, `$env:ProgramData`, `C:\_INFO`.
 5. **Never write, move or delete anything in core** (`dependencies\`, `$SyncHash.Toolkit.Root`, the toolkit folder itself). Write only to `Get-ToolkitClientDataPath` or `C:\_INFO\`.
-6. **No secrets in the file:** no RMM site keys, tenant tokens, API keys or passwords. The file ships to every machine. Take them from the technician in the UI, and don't log them.
+6. **No secrets in the file:** no RMM site keys, tenant tokens, API keys or passwords in the code. Ask the user to add each one on the wizard's **Secrets** page (tell them the exact name), read it with `Get-ToolkitSecret '<Name>'`, and lock the module. Don't log it. Locked modules run from memory, so never build a path from your module file's own location; use `Get-ToolkitClientRoot`.
 7. **Unique function names:** prefix every function with `{{Prefix}}` (for example `Get-{{Prefix}}RmmAgentUI`). Names already used by core are rejected (see [Appendix B](#appendix-b-function-names-already-used-by-core)).
 8. **Lightweight:** no PowerShell Gallery modules, no downloads at load time, nothing large. Put installers in Installers.
 9. **PowerShell 5.1 compatible:** the exes run on Windows PowerShell 5.1. No `??`, `?.`, ternary `? :`, `&&`/`||` chaining, `ForEach-Object -Parallel`, or C# 6+ syntax in `Add-Type`.

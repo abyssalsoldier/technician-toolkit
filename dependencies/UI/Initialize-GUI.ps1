@@ -1,5 +1,5 @@
 # UI: Initialize-GUI.ps1
-# Loads XAML, sets up synchronized state, handles auth dialog, launches WPF event loop
+# Loads XAML, sets up synchronized state, unlock on demand (Request-ToolkitUnlock), launches WPF event loop
 
 function Load-XamlWindow {
     param([string]$XamlPath)
@@ -103,52 +103,29 @@ function Start-ToolkitGUI {
     }
 
     # --- Authentication ---
-    Show-AuthDialog
-
-    # Update auth indicator
-    $authIcon = $window.FindName('txtAuthIcon')
-    $authStatusLabel = $window.FindName('txtAuthStatus')
-    if ($Global:SyncHash.Toolkit.Authenticated) {
-        $authIcon.Text = [char]0x2705
-        $authStatusLabel.Text = 'Authenticated'
-        $authStatusLabel.Foreground = New-Object System.Windows.Media.SolidColorBrush(
-            [System.Windows.Media.ColorConverter]::ConvertFromString('#A6E3A1'))
-    } else {
-        $authIcon.Text = [char]0x1F512
-        $authStatusLabel.Text = 'Locked'
-        $authStatusLabel.Foreground = New-Object System.Windows.Media.SolidColorBrush(
-            [System.Windows.Media.ColorConverter]::ConvertFromString('#F38BA8'))
+    # Base folder: everything unlocked. Locked kit (exe / USB): opens without a password; the first
+    # click on a locked module (or USB Toolkit) asks for it once and unlocks everything locked.
+    $Global:SyncHash.Toolkit.KitMode = Get-ToolkitKitMode -Toolkit $Global:SyncHash.Toolkit
+    if ($Global:SyncHash.Toolkit.KitMode -eq 'Base') {
+        Write-Log "Base Toolkit Mode - Running Unlocked" -Level Success
+        $Global:SyncHash.Toolkit.Authenticated = $true
+        $Global:SyncHash.ToolkitKey = "unlocked"
     }
+    Update-AuthIndicator
 
     # --- Initialize session logging ---
     Initialize-SessionLog
 
     # --- Load and register modules ---
-    # Core modules first, then client\Modules (a broken client module is skipped, not fatal)
-    Get-ToolkitModuleFiles | ForEach-Object {
-        $moduleFile = $_
-        try { . $moduleFile.FullName } catch { [void]$script:Toolkit.OverlayWarnings.Add("Module $($moduleFile.Name) failed to load: $($_.Exception.Message)") }
+    # Core modules first, then client\Modules (a broken client module is skipped, not fatal).
+    # Locked client modules of a locked kit are not on disk; they load after the unlock (Request-ToolkitUnlock).
+    foreach ($moduleScript in Get-ToolkitModuleScripts) {
+        try { . $moduleScript } catch { [void]$script:Toolkit.OverlayWarnings.Add("Module $(Split-Path $moduleScript.File -Leaf) failed to load: $($_.Exception.Message)") }
     }
     $Global:SyncHash.Modules = @(Get-RegisteredModules)
 
     # Populate nav panel — Dashboard first
-    $dashItem = New-Object System.Windows.Controls.ListBoxItem
-    $dashItem.Content = 'Dashboard'
-    $dashItem.Tag = @{ Name = 'Dashboard'; UIDefinition = $null }
-    $Global:SyncHash.NavList.Items.Add($dashItem) | Out-Null
-
-    foreach ($mod in $Global:SyncHash.Modules) {
-        $item = New-Object System.Windows.Controls.ListBoxItem
-        $item.Content = $mod.Label
-        $item.Tag = $mod
-
-        if ($mod.RequiresAuth -and -not $Global:SyncHash.Toolkit.Authenticated) {
-            $item.Content = "$($mod.Label) [LOCKED]"
-            $item.IsEnabled = $false
-        }
-
-        $Global:SyncHash.NavList.Items.Add($item) | Out-Null
-    }
+    Update-ToolkitNav
 
     # Nav selection handler
     $Global:SyncHash.NavList.Add_SelectionChanged({
@@ -160,6 +137,23 @@ function Start-ToolkitGUI {
             Load-Dashboard
             return
         }
+        if ($mod.RequiresAuth -and -not $Global:SyncHash.Toolkit.Authenticated) {
+            $wanted = $mod.Name
+            $unlocked = Request-ToolkitUnlock
+            # Re-select after the selection event has finished (the nav list is rebuilt on unlock)
+            $Global:SyncHash.Window.Dispatcher.BeginInvoke([action]{
+                $target = 0
+                if ($unlocked) {
+                    for ($i = 0; $i -lt $Global:SyncHash.NavList.Items.Count; $i++) {
+                        if ($Global:SyncHash.NavList.Items[$i].Tag.Name -eq $wanted) { $target = $i; break }
+                    }
+                }
+                $Global:SyncHash.NavList.SelectedIndex = -1
+                $Global:SyncHash.NavList.SelectedIndex = $target
+            }.GetNewClosure()) | Out-Null
+            return
+        }
+        if ($mod.IsPlaceholder) { return }   # unlock succeeded but the module did not load (see the log)
         if ($mod.UIDefinition) {
             try {
                 $uiPanel = & $mod.UIDefinition
@@ -199,12 +193,12 @@ function Start-ToolkitGUI {
 
     # USB Toolkit button (above Session Report)
     $btnUsbToolkit = $window.FindName('btnUsbToolkit')
-    if (-not $Global:SyncHash.Toolkit.Authenticated) {
-        $btnUsbToolkit.IsEnabled = $false
-        $btnUsbToolkit.Content = 'USB Toolkit [LOCKED]'
-        $btnUsbToolkit.Opacity = 0.4
-    }
+    $Global:SyncHash.UsbToolkitButton = $btnUsbToolkit
+    $Global:SyncHash.UsbToolkitButtonText = $btnUsbToolkit.Content
+    Update-AuthIndicator
     $btnUsbToolkit.Add_Click({
+        # Making a USB needs the kit password (the USB then gets its own)
+        if (-not $Global:SyncHash.Toolkit.Authenticated -and -not (Request-ToolkitUnlock)) { return }
         # Deselect any module in the nav
         $Global:SyncHash.NavList.SelectedIndex = -1
         $uiPanel = Get-UsbToolkitUI
@@ -259,28 +253,90 @@ function Start-ToolkitGUI {
     $script:ToolkitKey = $null
 }
 
-function Show-AuthDialog {
-    $sfxKeyPath = Join-Path $Global:SyncHash.Toolkit.Parent '.sfx-key'
-    $cachedKeyPath = Join-Path $Global:SyncHash.Toolkit.Parent '.toolkit-key'
-    $isSfx = Test-Path $sfxKeyPath
-    $hasUsbCache = Test-Path $cachedKeyPath
-
-    # If this is the base toolkit folder (not an exported SFX and not a cached USB)
-    if (-not $isSfx -and -not ($Global:SyncHash.Toolkit.IsUsb -and $hasUsbCache)) {
-        Write-Log "Base Toolkit Mode - Running Unlocked" -Level Success
-        $Global:SyncHash.Toolkit.Authenticated = $true
-        $Global:SyncHash.ToolkitKey = "unlocked"
-        return
+function Update-AuthIndicator {
+    # Header lock icon/text and the USB Toolkit button, from Toolkit.Authenticated
+    $window = $Global:SyncHash.Window
+    $authIcon = $window.FindName('txtAuthIcon')
+    $authStatusLabel = $window.FindName('txtAuthStatus')
+    if ($Global:SyncHash.Toolkit.Authenticated) {
+        $authIcon.Text = [char]0x2705
+        $authStatusLabel.Text = 'Authenticated'
+        $authStatusLabel.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+            [System.Windows.Media.ColorConverter]::ConvertFromString('#A6E3A1'))
+    } else {
+        $authIcon.Text = [char]::ConvertFromUtf32(0x1F512)   # outside the BMP: [char]0x1F512 throws
+        $authStatusLabel.Text = 'Locked'
+        $authStatusLabel.Foreground = New-Object System.Windows.Media.SolidColorBrush(
+            [System.Windows.Media.ColorConverter]::ConvertFromString('#F38BA8'))
     }
+    $btn = $Global:SyncHash.UsbToolkitButton
+    if ($btn) {
+        if ($Global:SyncHash.Toolkit.Authenticated) {
+            $btn.Content = $Global:SyncHash.UsbToolkitButtonText
+            $btn.Opacity = 1
+        } else {
+            $btn.Content = "$($Global:SyncHash.UsbToolkitButtonText) [LOCKED]"
+            $btn.Opacity = 0.6
+        }
+    }
+}
 
-    # WPF password dialog (up to 3 attempts)
+function Update-ToolkitNav {
+    # (Re)builds the nav list: Dashboard, then the registered modules, plus [LOCKED] placeholders for
+    # the encrypted modules of a locked kit that is not unlocked yet. Locked items stay clickable:
+    # clicking one asks for the password (see the SelectionChanged handler).
+    $nav = $Global:SyncHash.NavList
+    $nav.Items.Clear()
+
+    $dashItem = New-Object System.Windows.Controls.ListBoxItem
+    $dashItem.Content = 'Dashboard'
+    $dashItem.Tag = @{ Name = 'Dashboard'; UIDefinition = $null }
+    $nav.Items.Add($dashItem) | Out-Null
+
+    $entries = @($Global:SyncHash.Modules)
+    if (-not $Global:SyncHash.Toolkit.Authenticated) {
+        $loaded = @($entries | ForEach-Object { $_.Name })
+        $disabled = @(Get-ToolkitBrandingValue 'DisabledModules')
+        $entries += @(Get-ToolkitLockedIndex | Where-Object { $loaded -notcontains $_.Name -and $disabled -notcontains $_.Name })
+    }
+    foreach ($mod in ($entries | Sort-Object { [double]$_.SortOrder })) {
+        $item = New-Object System.Windows.Controls.ListBoxItem
+        $item.Content = $mod.Label
+        $item.Tag = $mod
+        if ($mod.RequiresAuth -and -not $Global:SyncHash.Toolkit.Authenticated) {
+            $item.Content = "$($mod.Label) [LOCKED]"
+            $item.Opacity = 0.6
+        }
+        $nav.Items.Add($item) | Out-Null
+    }
+}
+
+function Import-ToolkitLockedModules {
+    # Dot-sources the decrypted locked modules and promotes their functions to the global scope, so the
+    # nav handlers and Get-RegisteredModules see them like modules loaded at startup.
+    foreach ($sb in Get-ToolkitModuleScripts -LockedOnly) {
+        try {
+            . $sb
+            foreach ($fn in $sb.Ast.EndBlock.Statements | Where-Object { $_ -is [System.Management.Automation.Language.FunctionDefinitionAst] }) {
+                Set-Item -Path "function:global:$($fn.Name)" -Value (Get-Item "function:$($fn.Name)").ScriptBlock
+            }
+        } catch {
+            Write-Log "Module $(Split-Path $sb.File -Leaf) failed to load: $($_.Exception.Message)" -Level Warning
+        }
+    }
+}
+
+function Request-ToolkitUnlock {
+    # Asks for the kit password (up to 3 attempts) and unlocks every locked module and the secrets.
+    # Returns $true when the toolkit is unlocked.
+    if ($Global:SyncHash.Toolkit.Authenticated) { return $true }
+    $isUsb = $Global:SyncHash.Toolkit.IsUsb -and -not (Test-Path (Join-Path $Global:SyncHash.Toolkit.Parent '.sfx-key'))
+
     $authXamlPath = Join-Path $Global:SyncHash.Toolkit.Root 'UI\AuthDialog.xaml'
-    $authAttempts = 0
-    while (-not $Global:SyncHash.Toolkit.Authenticated -and $authAttempts -lt 3) {
-        $authAttempts++
-
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
         $authWindow = Load-XamlWindow -XamlPath $authXamlPath
         $authWindow.Topmost = $true
+        if ($Global:SyncHash.Window -and $Global:SyncHash.Window.IsLoaded) { $authWindow.Owner = $Global:SyncHash.Window }
 
         $txtAuthMsg  = $authWindow.FindName('txtAuthMsg')
         $btnSkip     = $authWindow.FindName('btnSkip')
@@ -289,26 +345,16 @@ function Show-AuthDialog {
         $txtPasswordReveal = $authWindow.FindName('txtPasswordReveal')
         $btnReveal   = $authWindow.FindName('btnReveal')
 
-        if ($isSfx) {
-            $txtAuthMsg.Text = "Enter the Toolkit password to unlock. (Attempt $authAttempts/3)"
-        } elseif ($Global:SyncHash.Toolkit.IsUsb) {
-            $txtAuthMsg.Text = "Enter the USB Toolkit password to unlock. (Attempt $authAttempts/3)"
-        }
+        $what = if ($isUsb) { 'USB Toolkit password' } else { 'Toolkit password' }
+        $txtAuthMsg.Text = "Enter the $what to unlock all locked modules. (Attempt $attempt/3)"
+        $btnSkip.Content = 'Cancel'
 
-        $script:authSubmitted = $false
-        $btnSkip.Add_Click({ $authWindow.Close() })
-        $btnUnlock.Add_Click({
-            $script:authSubmitted = $true
-            $authWindow.Close()
-        })
-        $txtPassword.Add_KeyDown({
-            param($s, $e)
-            if ($e.Key -eq 'Return') { $script:authSubmitted = $true; $authWindow.Close() }
-        })
-        $txtPasswordReveal.Add_KeyDown({
-            param($s, $e)
-            if ($e.Key -eq 'Return') { $script:authSubmitted = $true; $authWindow.Close() }
-        })
+        $state = @{ Submitted = $false }
+        $btnSkip.Add_Click({ $authWindow.Close() }.GetNewClosure())
+        $btnUnlock.Add_Click({ $state.Submitted = $true; $authWindow.Close() }.GetNewClosure())
+        $onEnter = { param($s, $e) if ($e.Key -eq 'Return') { $state.Submitted = $true; $authWindow.Close() } }.GetNewClosure()
+        $txtPassword.Add_KeyDown($onEnter)
+        $txtPasswordReveal.Add_KeyDown($onEnter)
         $btnReveal.Add_Click({
             if ($txtPassword.Visibility -eq 'Visible') {
                 $txtPasswordReveal.Text = $txtPassword.Password
@@ -319,68 +365,42 @@ function Show-AuthDialog {
                 $txtPasswordReveal.Visibility = 'Collapsed'
                 $txtPassword.Visibility = 'Visible'
             }
-        })
+        }.GetNewClosure())
+        $authWindow.Add_ContentRendered({ $txtPassword.Focus() | Out-Null }.GetNewClosure())
 
         $authWindow.ShowDialog() | Out-Null
+        if (-not $state.Submitted) { return $false }
 
-        if (-not $script:authSubmitted) { return }
+        $entered = if ($txtPassword.Visibility -eq 'Visible') { $txtPassword.Password } else { $txtPasswordReveal.Text }
+        $txtPassword.Clear(); $txtPasswordReveal.Text = ''
+        $entered = "$entered".Trim()
+        if ([string]::IsNullOrWhiteSpace($entered)) { $attempt--; continue }
 
-        if ($txtPassword.Visibility -eq 'Visible') {
-            $enteredKey = $txtPassword.Password.Trim()
-        } else {
-            $enteredKey = $txtPasswordReveal.Text.Trim()
+        $result = Unlock-ToolkitKit -Password $entered
+        $entered = $null
+        if ($result.Ok) {
+            Import-ToolkitLockedModules
+            $Global:SyncHash.Modules = @(Get-RegisteredModules)
+            Update-ToolkitNav
+            Update-AuthIndicator
+            Write-Log 'Authentication successful - locked modules unlocked' -Level Success
+            return $true
         }
-        if ([string]::IsNullOrWhiteSpace($enteredKey)) { continue }
-
-        $mainKeyToUse = $enteredKey
-        $isValid = $false
-        $usbUnlocked = $false
-
-        if ($isSfx) {
-            try {
-                $encryptedCache = (Get-Content $sfxKeyPath -Raw).Trim()
-                $mainKeyToUse = Unprotect-SfxPassword -EncryptedData $encryptedCache -SfxPassword $enteredKey
-                if ($mainKeyToUse) { $isValid = $true }
-            } catch {
-                # Decryption of the SFX key failed
-            }
-        } elseif ($Global:SyncHash.Toolkit.IsUsb -and $hasUsbCache) {
-            try {
-                $driveLetter = $Global:SyncHash.Toolkit.UsbDrive
-                $usbSerial = Get-ToolkitUsbSerial -Toolkit $Global:SyncHash.Toolkit
-                if ($usbSerial) {
-                    $encryptedCache = (Get-Content $cachedKeyPath -Raw).Trim()
-                    $mainKeyToUse = Unprotect-CachedPassword -EncryptedData $encryptedCache -DriveSerial $usbSerial -UserPassword $enteredKey
-                    if ($mainKeyToUse) { 
-                        $isValid = $true
-                        $usbUnlocked = $true
-                    }
-                }
-            } catch {
-                # Decryption of the cached key failed.
-            }
+        if ($result.Message -ne 'Wrong password.') {
+            # The vault or kit files are bad: another attempt can't help
+            Write-Log 'Unlock refused: the kit failed its integrity check' -Level Error
+            [System.Windows.MessageBox]::Show($result.Message, 'Toolkit locked', 'OK', 'Error') | Out-Null
+            return $false
         }
-
-        if ($isValid) {
-            $Global:SyncHash.Toolkit.Authenticated = $true
-            $Global:SyncHash.ToolkitKey = $mainKeyToUse
-
-            if ($isSfx) {
-                Remove-Item $sfxKeyPath -Force -ErrorAction SilentlyContinue
-            }
+        $remaining = 3 - $attempt
+        if ($remaining -gt 0) {
+            [System.Windows.MessageBox]::Show("Invalid password. $remaining attempt(s) remaining.", 'Authentication Failed', 'OK', 'Warning') | Out-Null
         } else {
-            $remaining = 3 - $authAttempts
-            if ($remaining -gt 0) {
-                [System.Windows.MessageBox]::Show(
-                    "Invalid password. $remaining attempt(s) remaining.",
-                    'Authentication Failed', 'OK', 'Warning') | Out-Null
-            } else {
-                [System.Windows.MessageBox]::Show(
-                    "Authentication failed after 3 attempts.",
-                    'Authentication Failed', 'OK', 'Error') | Out-Null
-            }
+            Write-Log 'Authentication failed after 3 attempts' -Level Warning
+            [System.Windows.MessageBox]::Show('Authentication failed after 3 attempts.', 'Authentication Failed', 'OK', 'Error') | Out-Null
         }
     }
+    return $false
 }
 
 function Start-ModuleInBackground {
@@ -417,7 +437,8 @@ function Start-ModuleInBackground {
         # Load UI modules (for Write-Log)
         Get-ChildItem -Path "$toolkitRoot\UI" -Filter '*.ps1' -File | ForEach-Object { . $_.FullName }
         # Load feature modules (core, then client\Modules)
-        Get-ToolkitModuleFiles | ForEach-Object { try { . $_.FullName } catch { } }
+        # (plus the locked modules decrypted in memory after an unlock)
+        foreach ($moduleScript in Get-ToolkitModuleScripts) { try { . $moduleScript } catch { } }
 
         try {
             & $EntryPoint

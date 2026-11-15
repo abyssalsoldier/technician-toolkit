@@ -88,6 +88,9 @@ jobs:
             -x "client.example/*" \
             -x "client/_removed/*" \
             -x "client/Data/*" \
+            -x "client/secrets.dat" \
+            -x "client/secrets.pkg" \
+            -x "client/secrets-names.json" \
             -x "*.key" \
             -x "build.ps1" \
             -x ".vscode/*" \
@@ -104,6 +107,8 @@ jobs:
             -x ".vscode/*" \
             -x "_builds/*" \
             -x "*.key" \
+            -x "client/secrets.dat" \
+            -x "client/secrets.pkg" \
             -x "latest.zip"
 
       - name: Generate SHA-256 checksum

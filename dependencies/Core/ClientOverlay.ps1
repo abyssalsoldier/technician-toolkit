@@ -272,15 +272,47 @@ function Get-ToolkitModuleFiles {
     }
 }
 
+function Get-ToolkitModuleScripts {
+    # Every module as a scriptblock to dot-source in the CALLER's scope (main thread or runspace):
+    #   foreach ($sb in Get-ToolkitModuleScripts) { . $sb }
+    # = the files from Get-ToolkitModuleFiles, plus the locked client modules that were decrypted into
+    # memory by Unlock-ToolkitKit (LockedKit.ps1). Their scriptblocks carry their client\Modules path,
+    # so registration and $PSScriptRoot behave as for a file. A file that fails to parse is skipped.
+    # -LockedOnly: only the decrypted locked modules.
+    param([switch]$LockedOnly)
+    $ctx = Get-ToolkitContext
+    if (-not $ctx) { return }
+    if (-not $LockedOnly) {
+        foreach ($f in Get-ToolkitModuleFiles) {
+            $tokens = $null; $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors -and $errors.Count -gt 0) {
+                $msg = "Module $($f.Name) has a syntax error (line $($errors[0].Extent.StartLineNumber)) and was skipped."
+                if ($null -ne $ctx.OverlayWarnings -and -not $ctx.OverlayWarnings.Contains($msg)) { [void]$ctx.OverlayWarnings.Add($msg) }
+                continue
+            }
+            $ast.GetScriptBlock()
+        }
+    }
+    foreach ($m in @($ctx.LockedModuleTexts)) {
+        if (-not $m) { continue }
+        $tokens = $null; $errors = $null
+        $path = Join-Path $ctx.Parent ($m.RelPath -replace '/', '\')
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($m.Text, $path, [ref]$tokens, [ref]$errors)
+        if ($errors -and $errors.Count -gt 0) { continue }
+        $ast.GetScriptBlock()
+    }
+}
+
 function Get-ToolkitModulePaths {
-    # Core Modules folder, plus client\Modules when it exists.
+    # Core Modules folder, plus client\Modules when it exists (or a locked kit keeps its modules in the vault).
     $ctx = Get-ToolkitContext
     if (-not $ctx) { return @() }
     $paths = @(Join-Path $ctx.Root 'Modules')
     $clientRoot = Get-ToolkitClientRoot -Parent $ctx.Parent
     if ($clientRoot) {
         $clientModules = Join-Path $clientRoot 'Modules'
-        if (Test-Path -LiteralPath $clientModules -PathType Container) { $paths += $clientModules }
+        if ((Test-Path -LiteralPath $clientModules -PathType Container) -or @($ctx.LockedModuleTexts).Count -gt 0) { $paths += $clientModules }
     }
     return $paths
 }
@@ -308,6 +340,8 @@ function Get-ToolkitPayloadExcludes {
     return @{
         # client\_removed = wizard undo bin, client\Data = module working data: neither ships
         Dirs  = @('tools', 'client.example', 'client\_removed', 'client\Data') | ForEach-Object { Join-Path $Root $_ }
-        Files = @('AGENTS.md', 'CLAUDE.md', 'CLIENT_GUIDE.md', 'Setup-Client.bat') | ForEach-Object { Join-Path $Root $_ }
+        # client\secrets.* = the wizard's secret store (DPAPI) and package copy: never shipped in plain
+        # form; locked builds put the values into the encrypted vault (LockedPayload.ps1)
+        Files = @('AGENTS.md', 'CLAUDE.md', 'CLIENT_GUIDE.md', 'Setup-Client.bat', 'client\secrets.dat', 'client\secrets.pkg', 'client\secrets-names.json') | ForEach-Object { Join-Path $Root $_ }
     }
 }

@@ -503,7 +503,8 @@ function Invoke-UsbToolkitSetup {
         '/E',
         '/XD', '.git', '.github', '.claude', '.vscode', 'Installers', '_builds', 'System Volume Information', '$RECYCLE.BIN') +
         @($repoOnly.Dirs | ForEach-Object { ConvertTo-RobocopyPathArg $_ }) + @(
-        '/XF', '.gitignore', '.toolkit-key', 'build.ps1') +
+        # .sfx-key: the locked exe's key must not reach the USB (the USB gets its own password)
+        '/XF', '.gitignore', '.toolkit-key', '.sfx-key', 'build.ps1') +
         @($repoOnly.Files | ForEach-Object { ConvertTo-RobocopyPathArg $_ }) + @(
         '/NFL', '/NDL', '/NJH', '/NJS',
         '/R:2', '/W:1'
@@ -520,6 +521,24 @@ function Invoke-UsbToolkitSetup {
     $usbSerial = Get-DriveSerial -DriveLetter $DriveLetter
     if (-not $usbSerial) {
         throw "Could not read the USB drive serial number; cannot bind the toolkit to this drive."
+    }
+
+    # Locked part of the kit. From an unlocked locked kit (exe / USB) the encrypted vault was copied as is
+    # and keeps its main key. From a base folder (the admin's repo), encrypt the locked client modules and
+    # the wizard secrets now, under a new main key.
+    $sourceVault = Join-Path $sourceRoot 'client\.locked\vault.bin'
+    if (-not (Test-Path -LiteralPath $sourceVault) -and ($SyncHash.Toolkit.KitMode -eq 'Base' -or $MainToolkitKey -eq 'unlocked')) {
+        . (Join-Path $SyncHash.Toolkit.Root 'Agent\LockedPayload.ps1')
+        $MainToolkitKey = New-ToolkitMainKey
+        $secrets = [ordered]@{}
+        $sourceClient = Join-Path $sourceRoot 'client'
+        if (Test-Path -LiteralPath $sourceClient) {
+            try { $secrets = Read-ToolkitSecretStore -ClientRoot $sourceClient }
+            catch { Write-Log 'client\secrets.dat belongs to another Windows user; the USB gets no secrets. Re-enter them in the Client Setup wizard.' -Level Warning }
+        }
+        $payload = New-ToolkitLockedPayload -Root $driveRoot -MainKey $MainToolkitKey -Secrets $secrets
+        $secrets = $null
+        Write-Log "Encrypted $($payload.LockedModules.Count) locked module(s) and $($payload.SecretCount) secret(s) on the USB." -Level Success
     }
 
     if ($ToolkitPassword -and $MainToolkitKey) {

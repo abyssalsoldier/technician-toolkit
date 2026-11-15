@@ -27,9 +27,10 @@ The toolkit reads `client\` at launch. This works the same way for `Launch.bat`,
    1. **Welcome:** shows the core version and confirms the core files are original.
    2. **Brand:** product name, accent color (with a live preview of the title bar), logo, support contact, your version.
    3. **Modules:** hide modules, lock modules behind the password, add or remove your own modules.
-   4. **Installers:** add your `.exe`/`.msi` installers, for example your RMM agent.
-   5. **Updates:** choose how USB toolkits update (see [Updates](#updates)).
-   6. **Check & Build:** run the checks, then **Build exe**, **Build locked exe** or **Make USB**.
+   4. **Secrets:** values your modules need that must stay protected, such as RMM site keys and tokens (see [Secrets and locked kits](#secrets-and-locked-kits)).
+   5. **Installers:** add your `.exe`/`.msi` installers, for example your RMM agent.
+   6. **Updates:** choose how USB toolkits update (see [Updates](#updates)).
+   7. **Check & Build:** run the checks, then **Build exe**, **Build locked exe** or **Make USB**.
 4. Your builds are in `C:\Toolkit\_builds\`. The exe names stay `EndpointToolkit.exe` and `EndpointToolkit_Locked.exe`, so existing ConnectWise Toolbox entries keep working.
 
 Run `Setup-Client.bat` again at any time to make changes. It loads your current settings.
@@ -96,6 +97,8 @@ function Register-AcmeRmm {
 | `Get-ToolkitClientDataPath ['name']` | A working folder for files your module writes **during a session** (wiped on Quit for USB/exe runs) |
 | `C:\_INFO\<YourModule>\` | Reports and anything that must survive (same as the core modules) |
 | `Get-ToolkitProductName`, `Get-ToolkitBrandingValue <Key>` | Your branding values |
+| `Get-ToolkitSecret 'Name'` | A value from the wizard's **Secrets** page, or `$null` while the kit is still locked. Never log or display it. |
+| `foreach ($sb in Get-ToolkitModuleScripts) { . $sb }` | Load all modules (including unlocked ones that only exist in memory) inside your own runspace |
 | `$Global:SyncHash` | Shared state: `.Window`, `.Toolkit` (`Root`, `Parent`, `Version`, `Authenticated`, `IsUsb`), `.ActionContent` |
 
 If you need something that isn't on this list, ask the toolkit provider to add it to core. Don't patch core: builds refuse modified core files.
@@ -105,7 +108,39 @@ If you need something that isn't on this list, ask the toolkit provider to add i
 - **Long work goes in the background** (`Start-ModuleInBackground`), never on the UI thread.
 - **The toolkit may run as SYSTEM** (ConnectWise backstage). No `Read-Host`, no `HKCU` / user-profile paths, no mapped drives.
 - **Never write under `dependencies\`.** Use `Get-ToolkitClientDataPath` or `C:\_INFO\`.
-- **No secrets in files.** RMM site keys, tenant tokens and passwords should be typed in by the technician. Everything in `client\` ships to every machine the toolkit runs on.
+- **No secrets in module files.** Put RMM site keys, tenant tokens and passwords on the **Secrets** page and read them with `Get-ToolkitSecret`. Tick **Lock** for every module that uses one.
+- **Locked modules run from memory.** In a locked kit their `.ps1` file isn't on disk. Use `Get-ToolkitClientRoot` for your files (installers, resources), and `Get-ToolkitModuleScripts` to load modules in your own runspace, not a path to your module file.
+
+---
+
+## Secrets and locked kits
+
+**Secrets page.** Add a name (for example `RmmSiteKey`) and its value. A module reads it with `Get-ToolkitSecret 'RmmSiteKey'`.
+
+- On your PC the values are stored in `client\secrets.dat`, encrypted by Windows for **your Windows account on that PC only**. The names are also kept in `client\secrets-names.json` (names only, safe to commit to git).
+- **Moving to another PC:** **Export client package** includes the names. Tick **Include secret values** to also include the values, encrypted with a passphrase you choose; **Import** asks for it. Without the values, the wizard tells you which secrets still need one.
+- `secrets.dat` is never committed (`.gitignore`), never in a client package, and never in any build.
+
+**What each build contains:**
+
+| Build | Locked modules | Secrets |
+|---|---|---|
+| `Launch.bat` from your folder | Unlocked (your test environment) | Read from your `secrets.dat` |
+| **Build exe** (`EndpointToolkit.exe`) | **Included unprotected**, no password | **Not included** |
+| **Build locked exe** | Encrypted inside the exe | Encrypted inside the exe |
+| **Make USB** | Encrypted on the stick | Encrypted on the stick |
+
+**How a locked exe or USB behaves:**
+- It opens **without a password**. Unlocked modules work right away. Locked ones show `[LOCKED]`.
+- Clicking a locked module (or **USB Toolkit**) asks for the password **once** and unlocks every locked module and the secrets for that session. They are decrypted in memory only, never written to disk.
+- A **USB** needs the locked exe's password to create, then gets **its own password**. It only unlocks on that physical stick, so copied files are useless elsewhere. BitLocker To Go protects the stick when it's unplugged.
+- Changed toolkit files are refused. If any file under `dependencies\` or `client\` was edited, added or removed, the kit won't unlock ("Kit files were changed"). Rebuild the kit or re-create the USB. Your own files elsewhere on the stick, and installers added to `CustomInstallers`, are fine and can be edited freely.
+- A locked USB only takes automatic **core** updates. With your own update feed it skips self-updates. Re-create the USB to update it.
+
+**Limits (be aware):**
+- Anyone who knows a kit's password can use its secrets, because the toolkit has to use them. Give the password only to technicians who may use them, and change it (rebuild) when someone leaves.
+- Unlocked modules and the core stay readable to anyone who can open the exe. Lock anything that should stay private.
+- Your own update feed's releases (`latest.zip`) contain your `client\` folder **in plain form, without secrets**. Keep that repo private if your locked modules are sensitive.
 
 ---
 
@@ -191,6 +226,17 @@ git add client; git commit -m "Add Acme client"; git push
 ---
 
 ## Changelog
+
+### Core 2.2.0
+- New: **Secrets page** in the wizard and `Get-ToolkitSecret`. Values are protected by Windows on your PC and encrypted into locked exe/USB builds (see [Secrets and locked kits](#secrets-and-locked-kits)).
+- New: **locked modules are encrypted** in the locked exe and on USB sticks. Before, the locked exe was a plain zip that anyone could open with 7-Zip, and deleting one hidden file unlocked it. Now the locked code and secrets can't be read without the password, and a kit with changed files refuses to unlock.
+- Changed: the locked exe and USB **open without a password**. The password is asked when a locked module (or USB Toolkit) is first clicked, and unlocks all of them.
+- Changed: a USB made from the locked exe no longer accepts the exe's password, only its own.
+- Changed: the locked exe removes its extracted copy (`%TEMP%\EndpointToolkit_SC`) on exit and restricts who can open it.
+- New: `Get-ToolkitModuleScripts` for loading modules in your own runspace.
+- Fixed: the locked exe could not extract itself (".NET: Number of entries expected in End Of Central Directory..."). Rebuild existing locked exes.
+- Fixed: the toolkit crashed when it started locked (lock icon).
+- Note: locked exes and USB sticks made with older versions keep working, but their modules aren't encrypted. Rebuild them to get the protection.
 
 ### Core 2.1.1
 - Changed: the core repo is now `abyssalsoldier/technician-toolkit` (was `Endpoint-toolkit`). The default update feed points at the new name. GitHub redirects the old URL, so existing USB sticks keep updating. Client repos should run `git remote set-url upstream https://github.com/abyssalsoldier/technician-toolkit.git`.

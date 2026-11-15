@@ -137,6 +137,12 @@ function Update-UsbToolkit {
 
     if (-not $script:Toolkit.IsUsb) { return }
     if (-not $LocalVersion) { $LocalVersion = $script:Toolkit.Version }
+    # A locked USB keeps its client modules and secrets in client\.locked\vault.bin. A client release
+    # replaces client\ with plain files, so only core updates (which keep client\) apply to it.
+    if (-not $KeepClientFolder -and (Test-Path -LiteralPath (Join-Path $script:Toolkit.Parent 'client\.locked\vault.bin'))) {
+        if ($script:Toolkit.OverlayWarnings) { [void]$script:Toolkit.OverlayWarnings.Add('Self-update skipped: this USB is a locked kit. Re-create it from the new version (Make USB) to update it.') }
+        return
+    }
 
     Add-Type -AssemblyName PresentationFramework
     try {

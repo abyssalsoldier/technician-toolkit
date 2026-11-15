@@ -5,42 +5,8 @@
 # Modules are inspected by PARSING them (PowerShell AST) - a module file is never executed here, so a
 # file picked in the wizard can't run code just by being imported, and the checks work on Linux CI.
 
-function Get-OvAstLiteral {
-    # Literal value of a hashtable value AST: string, number, $true/$false. IsLiteral=$false when computed.
-    param($ValueAst)
-    $expr = $ValueAst
-    if ($expr -is [System.Management.Automation.Language.PipelineAst] -and $expr.PipelineElements.Count -eq 1) { $expr = $expr.PipelineElements[0] }
-    if ($expr -is [System.Management.Automation.Language.CommandExpressionAst]) { $expr = $expr.Expression }
-    if ($expr -is [System.Management.Automation.Language.StringConstantExpressionAst]) { return @{ IsLiteral = $true; Value = $expr.Value } }
-    if ($expr -is [System.Management.Automation.Language.ConstantExpressionAst]) { return @{ IsLiteral = $true; Value = $expr.Value } }
-    if ($expr -is [System.Management.Automation.Language.VariableExpressionAst]) {
-        switch ($expr.VariablePath.UserPath) { 'true' { return @{ IsLiteral = $true; Value = $true } } 'false' { return @{ IsLiteral = $true; Value = $false } } }
-    }
-    return @{ IsLiteral = $false; Value = $ValueAst.Extent.Text }
-}
-
-function Read-OvModuleFile {
-    # Parses a module file. Returns Errors (parse), Functions (names), Registrations (one per Register-*:
-    # FunctionName + Meta hashtable of literal values + NonLiteral key list), and the AST.
-    param([Parameter(Mandatory)][string]$File)
-    $tokens = $null; $parseErrors = $null
-    $ast = [System.Management.Automation.Language.Parser]::ParseFile($File, [ref]$tokens, [ref]$parseErrors)
-    $functions = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object { $_.Name })
-    $regs = @()
-    foreach ($r in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -like 'Register-*' }, $true)) {
-        $meta = @{}; $nonLiteral = @()
-        $ht = $r.Body.Find({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)
-        if ($ht) {
-            foreach ($pair in $ht.KeyValuePairs) {
-                $key = $pair.Item1.Extent.Text.Trim("'`"")
-                $lit = Get-OvAstLiteral $pair.Item2
-                if ($lit.IsLiteral) { $meta[$key] = $lit.Value } else { $meta[$key] = $lit.Value; $nonLiteral += $key }
-            }
-        }
-        $regs += @{ FunctionName = $r.Name; Meta = $meta; NonLiteral = $nonLiteral; HasHashtable = [bool]$ht }
-    }
-    return @{ Ast = $ast; Errors = @($parseErrors); Functions = $functions; Registrations = $regs }
-}
+# Module AST helpers (Get-OvAstLiteral, Read-OvModuleFile) live in core so locked builds can use them too
+. (Join-Path $PSScriptRoot '../dependencies/Agent/ModuleMetadata.ps1')
 
 function Get-OvCoreInventory {
     # Core modules and functions, from dependencies/Modules (parsed, not executed).
@@ -250,6 +216,29 @@ function Test-OvClientOverlay {
     $infos += "Payload: client\ is $mb MB in $($all.Count) files."
     foreach ($big in $all | Where-Object { $_.Length -gt 25MB }) { $warnings += "Payload: large file $($big.Name) ($([math]::Round($big.Length / 1MB)) MB) - ConnectWise Toolbox uploads get slower." }
     foreach ($s in $all | Where-Object { $_.Name -like '*.key' -or $_.Name -in '.toolkit-key', '.sfx-key' }) { $errors += "Payload: key file must not be in client\: $($s.Name)" }
+
+    # Secrets: names come from secrets-names.json (written by the wizard; the values are never readable here)
+    $secretNames = @()
+    $namesPath = Join-Path $clientRoot 'secrets-names.json'
+    # assign first: PS 5.1 ConvertFrom-Json emits a JSON array as one pipeline object
+    if (Test-Path $namesPath) { try { $list = Get-Content $namesPath -Raw | ConvertFrom-Json; $secretNames = @(foreach ($n in @($list)) { "$n" }) } catch { $warnings += 'secrets-names.json is not valid JSON.' } }
+    if ($secretNames.Count) { $infos += "Secrets: $($secretNames.Count) defined ($($secretNames -join ', ')); values only go into locked exe/USB builds." }
+    $lockedList = @(if ($b.Branding) { @($b.Branding.LockedModules) })
+    foreach ($f in $files) {
+        $p = Read-OvModuleFile $f.FullName
+        if ($p.Errors.Count) { continue }
+        $used = @($p.Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Get-ToolkitSecret' }, $true) | ForEach-Object {
+            $arg = $_.CommandElements | Select-Object -Skip 1 | Where-Object { $_ -is [System.Management.Automation.Language.StringConstantExpressionAst] } | Select-Object -First 1
+            if ($arg) { $arg.Value }
+        })
+        if ($used.Count -eq 0) { continue }
+        foreach ($n in $used | Select-Object -Unique) {
+            if ($secretNames -notcontains $n) { $warnings += "Modules\$($f.Name): reads secret '$n', which is not defined on the Secrets page." }
+        }
+        $reg = $p.Registrations | Select-Object -First 1
+        $isLocked = ($reg -and $reg.Meta.RequiresAuth -eq $true) -or $lockedList -contains '*' -or ($reg -and $lockedList -contains $reg.Meta.Name)
+        if (-not $isLocked) { $warnings += "Modules\$($f.Name): reads secrets but is not locked, so its code ships readable and it runs without the password. Tick Lock for it." }
+    }
 
     return @{ Errors = $errors; Warnings = $warnings; Infos = $infos }
 }

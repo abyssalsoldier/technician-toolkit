@@ -1,6 +1,10 @@
 # Encryption keys and cached auth
 *.key
 .toolkit-key
+.sfx-key
+# Client Setup secret store (DPAPI, per Windows user) and package copy; secrets-names.json is safe to commit
+client/secrets.dat
+client/secrets.pkg
 
 # OS / Editor
 Thumbs.db

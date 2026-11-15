@@ -151,6 +151,8 @@ Write-Host "Cleaning up sensitive data..." -ForegroundColor Yellow
 $script:Toolkit.Config = $null
 $script:ToolkitKey = $null
 $script:Toolkit.Session = $null
+$script:Toolkit.Secrets = $null
+$script:Toolkit.LockedModuleTexts = $null
 if ($Global:SyncHash) {
     $Global:SyncHash.Toolkit.Config = $null
     $Global:SyncHash.ToolkitKey = $null
@@ -170,6 +172,15 @@ foreach ($p in $tempPaths) {
 if ($localCopyRoot -and (Split-Path $localCopyRoot -Leaf).StartsWith('EndpointToolkit_', [System.StringComparison]::OrdinalIgnoreCase)) {
     Set-Location $env:TEMP
     Remove-Item $localCopyRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Remove the folder the locked exe extracted itself to (%TEMP%\EndpointToolkit_SC)
+$sfxRoot = Split-Path $PSScriptRoot -Parent
+$sfxParentLong = (Get-Item -LiteralPath (Split-Path $sfxRoot -Parent) -ErrorAction SilentlyContinue).FullName   # 8.3 -> long
+if ((Split-Path $sfxRoot -Leaf) -eq 'EndpointToolkit_SC' -and $sfxParentLong -and
+    $sfxParentLong.TrimEnd('\') -eq (Get-Item -LiteralPath $env:TEMP).FullName.TrimEnd('\')) {
+    Set-Location $env:TEMP
+    Remove-Item -LiteralPath $sfxRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 

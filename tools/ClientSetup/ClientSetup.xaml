@@ -63,9 +63,10 @@
                     <ListBoxItem Padding="8,7">1. Welcome</ListBoxItem>
                     <ListBoxItem Padding="8,7">2. Brand</ListBoxItem>
                     <ListBoxItem Padding="8,7">3. Modules</ListBoxItem>
-                    <ListBoxItem Padding="8,7">4. Installers</ListBoxItem>
-                    <ListBoxItem Padding="8,7">5. Updates</ListBoxItem>
-                    <ListBoxItem Padding="8,7">6. Check &amp; Build</ListBoxItem>
+                    <ListBoxItem Padding="8,7">4. Secrets</ListBoxItem>
+                    <ListBoxItem Padding="8,7">5. Installers</ListBoxItem>
+                    <ListBoxItem Padding="8,7">6. Updates</ListBoxItem>
+                    <ListBoxItem Padding="8,7">7. Check &amp; Build</ListBoxItem>
                 </ListBox>
             </DockPanel>
         </Border>
@@ -162,8 +163,32 @@
                 </ScrollViewer>
             </DockPanel>
 
-            <!-- 4 Installers -->
+            <!-- 4 Secrets -->
             <DockPanel Name="page3" Visibility="Collapsed">
+                <StackPanel DockPanel.Dock="Top">
+                    <TextBlock Style="{StaticResource H1}" Text="Secrets"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Values your modules need that nobody should be able to read or copy: RMM site keys, tenant tokens, API keys, passwords. A module reads one with Get-ToolkitSecret 'Name' (lock that module on the Modules page)."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="On this PC the values are encrypted for your Windows account only. They go into locked exe and USB builds, encrypted under the kit password. They are never in the plain exe, in git, or in a client package unless you choose to include them when exporting."/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <TextBox Name="txtSecretName" Width="240" ToolTip="Letters, digits and _ (for example RmmSiteKey)"/>
+                        <Button Name="btnAddSecret" Content="Add secret" Margin="8,0,0,0"/>
+                        <TextBlock Name="txtSecretInfo" Foreground="{StaticResource Dim}" VerticalAlignment="Center" Margin="10,0,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="90"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Name" Foreground="{StaticResource Dim}"/>
+                        <TextBlock Grid.Column="1" Text="Value" Foreground="{StaticResource Dim}"/>
+                    </Grid>
+                </StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Name="pnlSecrets"/>
+                </ScrollViewer>
+            </DockPanel>
+
+            <!-- 5 Installers -->
+            <DockPanel Name="page4" Visibility="Collapsed">
                 <StackPanel DockPanel.Dock="Top">
                     <TextBlock Style="{StaticResource H1}" Text="Installers"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Your .exe and .msi installers (for example your RMM agent). They appear in Software Manager under Custom Installers. Everything here ships in every exe, USB and ConnectWise upload, so keep it small."/>
@@ -177,8 +202,8 @@
                 </ScrollViewer>
             </DockPanel>
 
-            <!-- 5 Updates -->
-            <ScrollViewer Name="page4" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+            <!-- 6 Updates -->
+            <ScrollViewer Name="page5" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
                 <StackPanel>
                     <TextBlock Style="{StaticResource H1}" Text="Updates"/>
                     <TextBlock Style="{StaticResource Hint}" Text="How USB toolkits update themselves when they start (the technician is always asked first)."/>
@@ -199,8 +224,8 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- 6 Build -->
-            <DockPanel Name="page5" Visibility="Collapsed">
+            <!-- 7 Build -->
+            <DockPanel Name="page6" Visibility="Collapsed">
                 <StackPanel DockPanel.Dock="Top">
                     <TextBlock Style="{StaticResource H1}" Text="Check &amp; Build"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Everything is checked before each build. Builds go to the _builds folder. The exe names stay EndpointToolkit.exe and EndpointToolkit_Locked.exe, so existing ConnectWise Toolbox entries keep working."/>
@@ -209,6 +234,7 @@
                         <Button Name="btnBuildExe" Content="Build exe" Margin="0,0,8,8"/>
                         <Button Name="btnMakeUsb" Content="Make USB..." Margin="0,0,8,8"/>
                         <Button Name="btnExport" Content="Export client package..." Margin="0,0,8,8"/>
+                        <CheckBox Name="chkExportSecrets" Content="Include secret values (asks for a passphrase)" VerticalAlignment="Center" Margin="0,0,16,8"/>
                         <Button Name="btnOpenBuilds" Content="Open builds folder" Margin="0,0,8,8"/>
                     </WrapPanel>
                     <Border CornerRadius="4" Background="#FF2D2D44" Padding="10" Margin="0,0,0,10">
