@@ -13,7 +13,7 @@
                   "client.example/Modules/Example-Module.ps1":  "7cde7deea786897d6d2c3a5a1d77c06de4d55654a4ad58d1b76d2887c763dcbf",
                   "client.example/version.txt":  "59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03",
                   "CLIENT_GUIDE.md":  "bae24be875c48e429f5dfa9b57993ddded262933c35aab4f058d883449b0316c",
-                  "dependencies/Agent/CoreIntegrity.ps1":  "b45a6e468e1ff056e64c54c9feefd92e9916dcecb7b2efde06695a94cea69de3",
+                  "dependencies/Agent/CoreIntegrity.ps1":  "ae1f9c4167081eb2ef0e80a389798d9db660ed51ef16a06c02b14d76d6f2ef91",
                   "dependencies/Agent/Export-LockedToolkit.ps1":  "3bdd0f6f6efc95f007d50515ef7d51d40b14d35c4fd1438eca8ee27651d43cac",
                   "dependencies/Agent/LockedPayload.ps1":  "0d65856ed7db7bcbe40a7eba794f176c6aa7057832b90d451ca90df8cfaee77b",
                   "dependencies/Agent/ModuleMetadata.ps1":  "073c589dbe390181927993d58098e69fec8db31c8d18f2b1d20c08e2f613cd9c",
@@ -52,7 +52,7 @@
                   "tools/OverlayValidation.ps1":  "6662296414c904c1053f0427f34b38f322984f24faa8cc8087dbf47554207bc5",
                   "tools/Test-ClientOverlay.ps1":  "be6cac0c7d857c5b3e1587d7fbf095926e296e8889a50dd386484a97bd0df634",
                   "UserGuide.md":  "de1e4e5008d1147b68b0782e1888ba884e268f92f56a999b04c87c66f76297df",
-                  "website/index.html":  "6c0493daacc916abb82df8648ce8e03acf9bb44ad8af7c7c4c8fbbd98c5aaea8",
+                  "website/index.html":  "864badb9835c25dc24a0e0ed60164037a959b9fb67782fd758db31a639698bcd",
                   "website/README.md":  "9f3214142d8bfa61aa51f3f12c5a0472244319fdf2f760782be16e8251b373cf"
               }
 }

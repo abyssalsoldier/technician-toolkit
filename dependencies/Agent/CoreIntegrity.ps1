@@ -32,7 +32,7 @@ function Test-ToolkitPathIsCore {
 
 function Get-ToolkitFileHash {
     param([Parameter(Mandatory)][string]$Path)
-    $textExt = '.ps1', '.psm1', '.psd1', '.xaml', '.md', '.txt', '.bat', '.cmd', '.json', '.yml', '.yaml', '.sed', '.gitignore', '.gitattributes', '.code-workspace'
+    $textExt = '.ps1', '.psm1', '.psd1', '.xaml', '.md', '.txt', '.bat', '.cmd', '.json', '.yml', '.yaml', '.sed', '.html', '.htm', '.css', '.js', '.svg', '.gitignore', '.gitattributes', '.code-workspace'
     $ext = [System.IO.Path]::GetExtension($Path).ToLower()
     $name = [System.IO.Path]::GetFileName($Path).ToLower()
     $bytes = [System.IO.File]::ReadAllBytes($Path)
