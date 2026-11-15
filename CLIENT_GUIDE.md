@@ -208,20 +208,37 @@ A mistake in `branding.json` never stops the toolkit from starting. It uses the 
 
 ## Advanced: using GitHub
 
-Use this if you want version control and your own release feed:
+Use this if you want version control, automatic core-update pull requests, and your own releases and client pack. Create an empty **private** repo first, then:
 
 ```powershell
 git clone https://github.com/abyssalsoldier/technician-toolkit.git acme-toolkit   # clone, don't download: shared history = clean updates
 cd acme-toolkit
 git remote rename origin upstream
-git remote add origin https://github.com/acme-it/acme-endpoint-toolkit.git        # your empty repo
+git remote add origin https://github.com/acme-it/acme-endpoint-toolkit.git        # your empty private repo
 git push -u origin main
+git checkout -b dev; git push -u origin dev         # day-to-day work happens on dev
 .\Setup-Client.bat                                  # create client\ with the wizard
 git add client; git commit -m "Add Acme client"; git push
 ```
 
-- **Releases:** the included workflow (`.github/workflows/release.yml`) builds from `client\version.txt`, runs the checks, and publishes to *your* repo's Releases when you push a version bump to `main` (or `master`, if your repo still uses it). Set Updates to "My own update feed" with `https://github.com/<you>/<repo>/releases/latest/download`. The feed must be **public**, because USB toolkits download without signing in. Otherwise use automatic core updates or host the files yourself.
-- **Updating core:** `git fetch upstream --prune`, then `git merge upstream/main`, then `.\tools\Test-ClientOverlay.ps1 -CheckCore`, then bump your version and push. If you only changed `client\`, the merge is always clean.
+Then in the repo's **Settings → Actions → General**, tick **Allow GitHub Actions to create and approve pull requests**.
+
+**How it works:**
+
+| Branch | What happens there |
+|---|---|
+| `dev` | Your work: modules, branding, wizard changes. Core updates arrive here as pull requests. Pushing publishes nothing. |
+| `main` | Releases. Merging `dev` into `main` with a higher `client\version.txt` publishes a release. |
+
+- **Core updates (automatic):** every Monday the **Core update** workflow checks for a new core. If there is one, it opens a pull request into `dev` named **Update core to v\<version\>**. That pull request merges the core, bumps `client\version.txt` if your current version was already released, and shows the overlay checks. Merge it, test, then merge `dev` into `main` to release. You can also start it any time from the **Actions** tab.
+  - If you edited a core file, the update takes the core's version and the pull request lists the file. Keep changes in `client\`.
+  - When a core update changes a GitHub workflow file, GitHub needs a token with workflow rights to push it. Add a fine-grained token for your repo (Contents, Pull requests and Workflows: read and write) as the Actions secret **`CORE_UPDATE_TOKEN`**. Without it you get an issue with the manual steps instead.
+- **Releases:** pushing a version bump to `main` (or `master`, if your repo still uses it) runs the checks and publishes to *your* repo's Releases: `latest.zip`, the ready-to-run exe (both without locked modules), and **`client-kit.zip`**.
+  - **Your client pack (`client-kit.zip`):** the core of that release plus `Setup-Client.bat`, the wizard and your whole `client\` folder, including locked modules. Download it from your latest release to set up on a new PC: extract, run `Setup-Client.bat`, then type the secret values again on the Secrets page (secrets are never stored in the pack). It's kept as long as the release exists.
+  - It's only attached when the repo is **private**, because it contains your locked modules' code. A public repo gets a warning instead.
+  - The release warns when it's built on an older core than the latest one.
+- **USB updates:** a private repo's releases need a GitHub sign-in, so USB sticks can't update from them. Use **Automatic core updates** (USB sticks get new cores and keep your `client\`), or host a feed yourself.
+- **Updating core by hand:** `git fetch upstream --prune`, then `git merge upstream/main`, then `.\tools\Test-ClientOverlay.ps1 -CheckCore`, then bump your version and push. If you only changed `client\`, the merge is always clean.
 
 ---
 
@@ -248,6 +265,7 @@ git add client; git commit -m "Add Acme client"; git push
 - New: locked modules show a lock icon in the menu, as well as `[LOCKED]`.
 - Changed: the core's release branch is now **`main`** (it was `master`; day-to-day core work is on `dev`). GitHub client repos update with `git fetch upstream --prune` and `git merge upstream/main`. Your own repo can keep releasing from `master`.
 - New: every release also has the ready-to-run **`EndpointToolkit.exe`**, next to `latest.zip` and `client-kit.zip`.
+- New (GitHub client repos): the **Core update** workflow opens a weekly pull request into `dev` when a new core is out. Private client repos get their own **`client-kit.zip`** (core plus their `client\` folder) with every release. Releases built on an older core show a warning. See **Advanced: using GitHub**.
 - New: **Output folder** on the Check & Build page (with **Browse...** and **Default**) chooses where the exe, folder build and locked exe go. Command line: `-OutputPath`.
 - New: modules list the secrets they need with `Secrets = @('Name', ...)` in their Register function. The Secrets page has **Import secrets from module...**, and adding a module offers to add its secrets. The checks warn when a module reads a secret it doesn't list.
 

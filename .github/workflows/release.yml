@@ -61,6 +61,23 @@ jobs:
         shell: pwsh
         run: ./tools/Test-ClientOverlay.ps1
 
+      - name: Check the core is current (client repo)
+        # A warning, not a failure: an urgent client fix can still ship on an older core
+        if: hashFiles('client/**') != ''
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          . ./dependencies/Core/ClientOverlay.ps1
+          $feed = (Get-ToolkitCoreDefaults).UpdateBaseUrl
+          $mine = (Get-Content dependencies/version.txt -Raw).Trim()
+          try {
+            $http = [System.Net.Http.HttpClient]::new(); $http.Timeout = [TimeSpan]::FromSeconds(30)
+            $latest = $http.GetStringAsync("$feed/version.txt").GetAwaiter().GetResult().Trim()
+          } catch { Write-Host "::warning::Could not read the latest core version from $feed ($($_.Exception.Message))."; exit 0 }
+          if ([version]$mine -lt [version]$latest) {
+            Write-Host "::warning::This release is built on core v$mine, but core v$latest is available. Merge the 'Update core' pull request into dev (or git merge upstream/main), then release again."
+          } else { Write-Host "Core v$mine is the latest core." }
+
       - name: Verify core manifest is current (core repo)
         if: hashFiles('client/**') == ''
         shell: pwsh
@@ -84,6 +101,35 @@ jobs:
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Create client kit
+        # Core repo  : the full core (Setup-Client.bat, tools/, client.example/, guides) for setting up a
+        #              branded toolkit without GitHub.
+        # Client repo: the client's own pack, the same plus their client/ folder (locked modules included),
+        #              built from exactly this release. Attached only when the repo is PRIVATE: the pack
+        #              holds locked module code, which must never be in a public release.
+        # Secrets never ship (secrets.dat is tied to one Windows user); secrets-names.json lists the names.
+        # Runs before the next step removes locked modules from the checkout for latest.zip.
+        if: steps.exists.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -d client ] && [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" != "true" ]; then
+            echo "::warning::client-kit.zip not attached: this repo is public and the pack contains your locked modules. Make the repo private to get your pack with every release."
+            exit 0
+          fi
+          zip -r -q client-kit.zip . \
+            -x ".git/*" \
+            -x ".claude/*" \
+            -x ".vscode/*" \
+            -x "_builds/*" \
+            -x "*.key" \
+            -x "client/secrets.dat" \
+            -x "client/secrets.pkg" \
+            -x "client/_removed/*" \
+            -x "client/Data/*" \
+            -x "website/*"
+          echo "client-kit.zip: $(unzip -l client-kit.zip | tail -1)"
 
       - name: Leave out locked client modules
         # latest.zip has no password (plain USB updates), so locked modules must not ship in it (as in build.ps1)
@@ -123,23 +169,8 @@ jobs:
             -x "build.ps1" \
             -x ".vscode/*" \
             -x "_builds/*" \
-            -x "website/*"
-
-      - name: Create client kit (core repo only)
-        # Everything a client needs to set up a branded toolkit WITHOUT GitHub: the full core including
-        # Setup-Client.bat, tools/, client.example/ and the guides. Clients download this, not latest.zip.
-        if: steps.exists.outputs.exists == 'false' && hashFiles('client/**') == ''
-        run: |
-          zip -r client-kit.zip . \
-            -x ".git/*" \
-            -x ".claude/*" \
-            -x ".vscode/*" \
-            -x "_builds/*" \
-            -x "*.key" \
-            -x "client/secrets.dat" \
-            -x "client/secrets.pkg" \
             -x "website/*" \
-            -x "latest.zip"
+            -x "client-kit.zip"
 
       - name: Generate SHA-256 checksum
         if: steps.exists.outputs.exists == 'false'

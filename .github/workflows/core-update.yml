@@ -1,0 +1,144 @@
+name: Core update
+
+# CLIENT REPOS ONLY (does nothing in the core repo or without a client/ folder).
+# Every Monday (or by hand from the Actions tab) this checks the core for a new version. When there is
+# one, it merges it into a new branch core-update/v<version> off dev (or off the default branch when
+# there is no dev), bumps client/version.txt if it was already released, runs the overlay checks, and
+# opens a pull request into that branch. Merge it, test, then merge dev into main to release.
+#
+# - Core files edited in this repo conflict with the update. The core's version is taken (the client
+#   boundary rule, AGENTS.md) and the pull request lists those files. A conflict inside client/ stops.
+# - GitHub doesn't let the default token change files under .github/workflows. When a core update
+#   changes a workflow, the push needs the secret CORE_UPDATE_TOKEN: a fine-grained token for this repo
+#   with Contents, Pull requests and Workflows set to read/write. Without it, you get an issue instead
+#   of a pull request and update by hand (git merge upstream/main).
+# - Repo setting needed: Settings > Actions > General > "Allow GitHub Actions to create and approve
+#   pull requests" (not needed when CORE_UPDATE_TOKEN is set).
+# - Different core: set the repo variable CORE_REPO (owner/name). Default: abyssalsoldier/technician-toolkit.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  core-update:
+    if: github.repository != 'abyssalsoldier/technician-toolkit'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.CORE_UPDATE_TOKEN || github.token }}
+
+      - name: Merge the new core and open a pull request
+        env:
+          GH_TOKEN: ${{ secrets.CORE_UPDATE_TOKEN || github.token }}
+          CORE_REPO: ${{ vars.CORE_REPO || 'abyssalsoldier/technician-toolkit' }}
+        run: |
+          set -euo pipefail
+          if [ ! -d client ]; then echo "No client/ folder: not a client repo, nothing to do."; exit 0; fi
+          if ! printf '%s' "$CORE_REPO" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+            echo "::error::CORE_REPO '$CORE_REPO' is not owner/name."; exit 1
+          fi
+
+          # Target: dev when it exists, else the default branch
+          if git ls-remote --exit-code --heads origin dev > /dev/null; then TARGET=dev
+          else TARGET=$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch); fi
+          git checkout -q "$TARGET"
+
+          git remote add upstream "https://github.com/$CORE_REPO.git" 2> /dev/null || git remote set-url upstream "https://github.com/$CORE_REPO.git"
+          git fetch -q upstream main
+          if ! git merge-base HEAD upstream/main > /dev/null; then
+            echo "::error::This repo doesn't share git history with the core (it wasn't created with git clone), so core updates can't be merged. See CLIENT_GUIDE.md, 'Advanced: using GitHub'."
+            exit 1
+          fi
+          if git merge-base --is-ancestor upstream/main HEAD; then echo "$TARGET already has the latest core."; exit 0; fi
+
+          CORE_VER=$(git show upstream/main:dependencies/version.txt | tr -d '[:space:]')
+          if ! printf '%s' "$CORE_VER" | grep -Eq '^[0-9]+(\.[0-9]+){1,3}$'; then echo "::error::Core version '$CORE_VER' is not a version."; exit 1; fi
+          OLD_VER=$(tr -d '[:space:]' < dependencies/version.txt)
+          BRANCH="core-update/v$CORE_VER"
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            echo "$BRANCH already exists: merge or close its pull request (delete the branch to get a new one)."; exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git checkout -q -b "$BRANCH"
+
+          # Merge; conflicts outside client/ take the core's version, conflicts inside client/ stop
+          CONFLICTS=""
+          if ! git merge -q --no-edit -m "Update core to v$CORE_VER" upstream/main; then
+            CONFLICTS=$(git diff --name-only --diff-filter=U)
+            if printf '%s\n' "$CONFLICTS" | grep -q '^client/'; then
+              echo "::error::The core update conflicts inside client/ (the core never ships client/). Merge by hand: git merge upstream/main."
+              exit 1
+            fi
+            while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              if git cat-file -e "upstream/main:$f" 2> /dev/null; then git checkout upstream/main -- "$f"
+              else git rm -q -- "$f"; fi
+            done <<< "$CONFLICTS"
+            git commit -q --no-edit
+          fi
+
+          # Bump client/version.txt when the current version was already released, so merging dev
+          # into main publishes a new release
+          CLIENT_VER=$(tr -d '[:space:]' < client/version.txt)
+          LAST_TAG=$(gh release view --json tagName --jq .tagName 2> /dev/null || true)
+          BUMPED=""
+          if [ -n "$LAST_TAG" ] && [ "v$CLIENT_VER" = "$LAST_TAG" ]; then
+            BUMPED=$(printf '%s' "$CLIENT_VER" | awk -F. -v OFS=. '{ if (NF < 3) $3 = 0; $3 = $3 + 1; print }')
+            printf '%s\r\n' "$BUMPED" > client/version.txt
+            git add client/version.txt
+            git commit -q -m "Bump client version to $BUMPED (core v$CORE_VER)"
+          fi
+
+          # Same checks as before every client commit (AGENTS.md)
+          CHECK="$RUNNER_TEMP/check.txt"
+          if pwsh -NoProfile -File ./tools/Test-ClientOverlay.ps1 -CheckCore -Upstream upstream/main > "$CHECK" 2>&1; then CHECK_OK=yes; else CHECK_OK=no; fi
+          cat "$CHECK"
+
+          BODY="$RUNNER_TEMP/body.md"
+          {
+            echo "Merges core **v$CORE_VER** (this branch had v$OLD_VER) from \`$CORE_REPO\`."
+            echo
+            if [ -n "$CONFLICTS" ]; then
+              echo "**These core files had local changes and conflicted. The core's version was taken** (core files are replaced on every update; keep changes in \`client/\`):"
+              printf '%s\n' "$CONFLICTS" | sed 's/^/- `/; s/$/`/'
+              echo
+            fi
+            if [ -n "$BUMPED" ]; then echo "Client version bumped from $CLIENT_VER to **$BUMPED**, so the next release publishes."; echo; fi
+            if [ "$CHECK_OK" = yes ]; then echo "Overlay checks: **passed**."; else echo "Overlay checks: **FAILED**. Fix the errors below before merging."; fi
+            echo
+            echo '```'
+            tail -n 40 "$CHECK"
+            echo '```'
+            echo
+            echo "Next: merge this into \`$TARGET\`, test (\`Launch.bat\` or the wizard's Check), then merge \`$TARGET\` into \`main\` to release. Core changes: CLIENT_GUIDE.md, Changelog."
+          } > "$BODY"
+
+          if ! git push -q origin "$BRANCH"; then
+            echo "::warning::Pushing $BRANCH failed (a core update that changes .github/workflows needs the CORE_UPDATE_TOKEN secret). Opening an issue instead."
+            TITLE="Core v$CORE_VER is available"
+            if [ -z "$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[].number')" ]; then
+              { echo "The automatic core update couldn't push its branch. Update by hand:"; echo
+                echo '```'; echo "git checkout $TARGET"; echo "git fetch upstream --prune"; echo "git merge upstream/main"
+                echo '.\tools\Test-ClientOverlay.ps1 -CheckCore'; echo '```'; echo
+                echo "Or add the CORE_UPDATE_TOKEN secret (see .github/workflows/core-update.yml) and run the Core update workflow again."
+              } > "$RUNNER_TEMP/issue.md"
+              gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"
+            fi
+            exit 0
+          fi
+          if ! gh pr create --base "$TARGET" --head "$BRANCH" --title "Update core to v$CORE_VER" --body-file "$BODY"; then
+            echo "::error::$BRANCH was pushed but the pull request couldn't be created. Enable Settings > Actions > General > 'Allow GitHub Actions to create and approve pull requests' (or set CORE_UPDATE_TOKEN), or open the pull request by hand."
+            exit 1
+          fi

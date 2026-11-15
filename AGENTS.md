@@ -40,6 +40,8 @@ git merge upstream/main                     # clean if the boundary was respecte
 - **Conflict inside `client/`:** shouldn't happen, since core never ships `client/`. Stop and ask the user.
 - After the merge, bump `client/version.txt` (see below), commit as `Update core to v<dependencies/version.txt>`, and push only if the user asks.
 - If `upstream` is missing: `git remote add upstream https://github.com/abyssalsoldier/technician-toolkit.git`
+- On GitHub, the **Core update** workflow (`.github/workflows/core-update.yml`) does all of this weekly and opens a pull request `Update core to v<version>` (branch `core-update/v<version>`) into `dev`. When one is open, review and merge it instead of merging by hand.
+- Repos with `dev` and `main`: work on `dev`; merging `dev` into `main` releases (push only if the user asks).
 
 ### Ship a release
 Bump `client/version.txt` (semantic version, always higher than the last release), commit, and push to your release branch (`main`, or `master` in client repos created before v2.2.1). CI publishes `v<version>` to this repo's Releases. Bump the patch for fixes and core updates, the minor for new modules or features, the major for breaking changes to how technicians use the toolkit.
