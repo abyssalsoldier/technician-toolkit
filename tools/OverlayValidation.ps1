@@ -227,14 +227,12 @@ function Test-OvClientOverlay {
     foreach ($f in $files) {
         $p = Read-OvModuleFile $f.FullName
         if ($p.Errors.Count) { continue }
-        $used = @($p.Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Get-ToolkitSecret' }, $true) | ForEach-Object {
-            $arg = $_.CommandElements | Select-Object -Skip 1 | Where-Object { $_ -is [System.Management.Automation.Language.StringConstantExpressionAst] } | Select-Object -First 1
-            if ($arg) { $arg.Value }
-        })
-        if ($used.Count -eq 0) { continue }
-        foreach ($n in $used | Select-Object -Unique) {
-            if ($secretNames -notcontains $n) { $warnings += "Modules\$($f.Name): reads secret '$n', which is not defined on the Secrets page." }
-        }
+        $sec = Get-OvModuleSecrets -Parsed $p
+        foreach ($bad in $sec.Invalid) { $warnings += "Modules\$($f.Name): Secrets entry $bad is not a plain name in quotes (letters, digits, _), so the wizard can't read it." }
+        foreach ($n in $sec.Undeclared) { $warnings += "Modules\$($f.Name): reads secret '$n' but doesn't list it in Secrets = @(...) in its Register function." }
+        if ($sec.All.Count -eq 0) { continue }
+        $missing = @($sec.All | Where-Object { $secretNames -notcontains $_ })
+        if ($missing.Count) { $warnings += "Modules\$($f.Name): needs secret(s) $(($missing | ForEach-Object { "'$_'" }) -join ', ') not yet on the Secrets page. Use 'Import secrets from module...' there." }
         $reg = $p.Registrations | Select-Object -First 1
         $isLocked = ($reg -and $reg.Meta.RequiresAuth -eq $true) -or $lockedList -contains '*' -or ($reg -and $lockedList -contains $reg.Meta.Name)
         if (-not $isLocked) { $warnings += "Modules\$($f.Name): reads secrets but is not locked, so its code ships readable and it runs without the password. Tick Lock for it." }

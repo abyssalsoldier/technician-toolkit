@@ -172,6 +172,7 @@
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <TextBox Name="txtSecretName" Width="240" ToolTip="Letters, digits and _ (for example RmmSiteKey)"/>
                         <Button Name="btnAddSecret" Content="Add secret" Margin="8,0,0,0"/>
+                        <Button Name="btnImportSecrets" Content="Import secrets from module..." Margin="8,0,0,0" ToolTip="Pick a module file: every secret it lists (Secrets = @(...)) or reads (Get-ToolkitSecret) is added here, ready for its value."/>
                         <TextBlock Name="txtSecretInfo" Foreground="{StaticResource Dim}" VerticalAlignment="Center" Margin="10,0,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                     <Grid Margin="0,0,0,4">
@@ -228,10 +229,10 @@
             <DockPanel Name="page6" Visibility="Collapsed">
                 <StackPanel DockPanel.Dock="Top">
                     <TextBlock Style="{StaticResource H1}" Text="Check &amp; Build"/>
-                    <TextBlock Style="{StaticResource Hint}" Text="Everything is checked before each build. Builds go to the _builds folder. The exe names stay EndpointToolkit.exe and EndpointToolkit_Locked.exe, so existing ConnectWise Toolbox entries keep working."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Everything is checked before each build. Builds go to the _builds folder. 'Build exe + folder' also makes a ready-to-run copy you start with its Launch.bat. The exe names stay EndpointToolkit.exe and EndpointToolkit_Locked.exe, so existing ConnectWise Toolbox entries keep working."/>
                     <WrapPanel Margin="0,0,0,8">
                         <Button Name="btnCheck" Content="Check everything" Margin="0,0,8,8"/>
-                        <Button Name="btnBuildExe" Content="Build exe" Margin="0,0,8,8"/>
+                        <Button Name="btnBuildExe" Content="Build exe + folder" Margin="0,0,8,8"/>
                         <Button Name="btnMakeUsb" Content="Make USB..." Margin="0,0,8,8"/>
                         <Button Name="btnExport" Content="Export client package..." Margin="0,0,8,8"/>
                         <CheckBox Name="chkExportSecrets" Content="Include secret values (asks for a passphrase)" VerticalAlignment="Center" Margin="0,0,16,8"/>

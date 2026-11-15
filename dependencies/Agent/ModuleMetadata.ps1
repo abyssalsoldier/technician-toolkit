@@ -40,3 +40,41 @@ function Read-OvModuleFile {
     }
     return @{ Ast = $ast; Errors = @($parseErrors); Functions = $functions; Registrations = $regs }
 }
+
+function Get-OvModuleSecrets {
+    # Secret names a parsed module (Read-OvModuleFile) needs:
+    #   Declared   : the Register-* key  Secrets = @('Name1', 'Name2')  (or a single 'Name')
+    #   Used       : literal names passed to Get-ToolkitSecret '<Name>' anywhere in the file
+    #   All        : both, unique, in that order
+    #   Undeclared : used but not declared
+    #   Invalid    : declared entries that are not plain names (computed values, bad characters)
+    param([Parameter(Mandatory)][hashtable]$Parsed)
+    $nameRx = '^[A-Za-z][A-Za-z0-9_]{0,63}$'
+    $declared = @(); $invalid = @()
+    $reg = $Parsed.Registrations | Select-Object -First 1
+    if ($reg) {
+        $ht = $Parsed.Ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $reg.FunctionName }, $true).Body.Find({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)
+        $pair = if ($ht) { $ht.KeyValuePairs | Where-Object { $_.Item1.Extent.Text.Trim("'`"") -eq 'Secrets' } | Select-Object -First 1 }
+        if ($pair) {
+            $items = @($pair.Item2.FindAll({ param($n)
+                ($n -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $n -is [System.Management.Automation.Language.ExpandableStringExpressionAst] -or $n -is [System.Management.Automation.Language.VariableExpressionAst]) -and
+                -not ($n.Parent -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) }, $true))
+            foreach ($i in $items) {
+                if ($i -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $i.Value -match $nameRx) { $declared += $i.Value }
+                else { $invalid += $i.Extent.Text }
+            }
+        }
+    }
+    $used = @($Parsed.Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Get-ToolkitSecret' }, $true) | ForEach-Object {
+        $arg = $_.CommandElements | Select-Object -Skip 1 | Where-Object { $_ -is [System.Management.Automation.Language.StringConstantExpressionAst] } | Select-Object -First 1
+        if ($arg -and $arg.Value -match $nameRx) { $arg.Value }
+    })
+    $declared = @($declared | Select-Object -Unique); $used = @($used | Select-Object -Unique)
+    return @{
+        Declared   = $declared
+        Used       = $used
+        All        = @(@($declared) + @($used) | Select-Object -Unique)
+        Undeclared = @($used | Where-Object { $declared -notcontains $_ })
+        Invalid    = $invalid
+    }
+}

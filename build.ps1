@@ -7,6 +7,7 @@
 #   .\build.ps1 -Dev         # Copies files directly (no zip) — fastest for testing
 #   .\build.ps1 -Test        # Same as -Dev but also launches the toolkit
 #   .\build.ps1 -SFX         # Zip + self-extracting EndpointToolkit.exe
+#   .\build.ps1 -Folder      # Also a ready-to-run folder (_builds\v...\EndpointToolkit\Launch.bat); combines with -SFX
 #
 # Core integrity: every build checks core files against dependencies\core-manifest.json.
 # With a client\ folder the build is REFUSED when core was changed. Core maintainers:
@@ -18,6 +19,7 @@ param(
     [switch]$Dev,
     [switch]$Test,
     [switch]$SFX,
+    [switch]$Folder,
     [switch]$UpdateCoreManifest,
     [switch]$AllowModifiedCore
 )
@@ -148,6 +150,16 @@ if ($Dev -or $Test) {
     # Remove *.key files from staging
     Get-ChildItem -Path $tempStaging -Filter "*.key" -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force
 
+    # Ready-to-run folder: exactly the zip's contents, unzipped (run Launch.bat inside it)
+    if ($Folder) {
+        $folderPath = Join-Path $buildDir $exeBaseName
+        $folderArgs = @((ConvertTo-RobocopyPathArg $tempStaging), (ConvertTo-RobocopyPathArg $folderPath), "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/R:2", "/W:1")
+        $proc = Start-Process robocopy -ArgumentList $folderArgs -Wait -PassThru -NoNewWindow
+        if ($proc.ExitCode -ge 8) {
+            Write-Host "Error creating the folder build (robocopy exit code $($proc.ExitCode))." -ForegroundColor Red
+            exit 1
+        }
+    }
 
     # Create zip
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
@@ -163,6 +175,7 @@ if ($Dev -or $Test) {
     Write-Host "Build complete:" -ForegroundColor Green
     Write-Host "  Zip : $zipPath ($zipSize MB)" -ForegroundColor White
     Write-Host "  SHA : $hash" -ForegroundColor White
+    if ($Folder) { Write-Host "  Run : $(Join-Path $folderPath 'Launch.bat')" -ForegroundColor White }
     Write-Host ""
 
     if ($SFX) {

@@ -8,8 +8,11 @@
 #   - Long work runs in the background (Start-ModuleInBackground or your own runspace), never on the UI thread.
 #   - The toolkit may run as SYSTEM via ConnectWise Toolbox: no user-profile paths, no interactive prompts.
 #   - Use Get-ToolkitAccent / New-ToolkitBrush for the brand color instead of hardcoding hex values.
-#   - Never hardcode secrets (tenant keys, tokens). Add them on the Client Setup Secrets page and read them with
-#     Get-ToolkitSecret 'Name' (never log them). A module that reads secrets must be locked.
+#   - Never hardcode secrets (tenant keys, tokens). List each one in Secrets = @(...) below and read it with
+#     Get-ToolkitSecret 'Name' (never log it). The Client Setup wizard adds listed secrets to its Secrets page,
+#     where their values are entered. A module that reads secrets must be locked.
+#
+# Secrets this module needs: none
 
 function Register-ClientExample {
     @{
@@ -20,6 +23,7 @@ function Register-ClientExample {
         SortOrder    = 90                         # menu position; core modules use 20-50
         EntryPoint   = 'Start-ClientExample'      # runs in a background runspace
         UIDefinition = 'Get-ClientExampleUI'      # optional; omit for a default "Run" button
+        Secrets      = @()                        # every secret this module reads, e.g. @('ClientExampleSiteKey')
     }
 }
 

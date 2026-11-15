@@ -145,7 +145,7 @@ $ui = @{}
 foreach ($n in 'txtCoreInfo', 'lstSteps', 'txtWelcome', 'bdrIntegrity', 'txtIntegrityTitle', 'txtIntegrityDetail', 'btnImport', 'btnOpenGuide',
                'imgPreviewLogo', 'txtPreviewName', 'txtPreviewVersion', 'txtProductName', 'txtAccent', 'pnlSwatches', 'btnLogo', 'btnLogoRemove', 'txtLogoInfo', 'txtSupport', 'txtVersion',
                'btnAddModule', 'btnLockAll', 'btnUnlockAll', 'btnModuleGuide', 'txtNewModule', 'btnNewModule', 'pnlModules',
-               'txtSecretName', 'btnAddSecret', 'txtSecretInfo', 'pnlSecrets', 'chkExportSecrets',
+               'txtSecretName', 'btnAddSecret', 'btnImportSecrets', 'txtSecretInfo', 'pnlSecrets', 'chkExportSecrets',
                'btnAddInstaller', 'txtInstallerTotal', 'pnlInstallers',
                'rbCore', 'rbCustom', 'rbNone', 'pnlCustom', 'txtFeedUrl', 'txtGitHubRepo', 'btnFillGitHub',
                'btnCheck', 'btnBuildExe', 'btnMakeUsb', 'btnExport', 'btnOpenBuilds', 'pwd1', 'pwd2', 'btnBuildLocked', 'txtOutput',
@@ -430,7 +430,16 @@ $ui.btnAddModule.Add_Click({
         Show-Msg 'That is a core module. Core modules are already included - hide or lock them in the list instead.' 'OK' 'Information' | Out-Null; return
     }
     Save-WizardState -Quiet
-    if (Add-ModuleFile -SourceFile $dlg.FileName) { Update-ModuleList }
+    if (Add-ModuleFile -SourceFile $dlg.FileName) {
+        Update-ModuleList
+        # Offer to put the module's secrets on the Secrets page right away, so nobody has to remember them
+        $p = Read-OvModuleFile $dlg.FileName
+        $need = @((Get-OvModuleSecrets -Parsed $p).All | Where-Object { $n = $_; -not ($secrets.Values.Keys | Where-Object { $_ -eq $n }) })
+        if ($need.Count -and (Show-Msg "This module needs these secrets: $($need -join ', ').`n`nAdd them to the Secrets page now? You then type their values there." 'YesNo' 'Question') -eq 'Yes') {
+            $null = Import-WizardModuleSecrets -File $dlg.FileName
+            Set-Status "Added module and $($need.Count) secret(s) - enter their values on the Secrets page."
+        }
+    }
 })
 $ui.btnNewModule.Add_Click({
     $label = $ui.txtNewModule.Text.Trim()
@@ -611,6 +620,43 @@ $ui.btnAddSecret.Add_Click({
     Set-Status "Added secret $n - type its value in the list."
 })
 
+function Import-WizardModuleSecrets {
+    # Adds every secret a module file needs (its Secrets = @(...) list and its Get-ToolkitSecret calls) to the
+    # Secrets page with an empty value. Values already entered are kept. Returns @{ Ok; Added; Existing; Invalid; Error }.
+    param([Parameter(Mandatory)][string]$File)
+    $p = Read-OvModuleFile $File
+    if ($p.Errors.Count) { return @{ Ok = $false; Error = "The file has a syntax error (line $($p.Errors[0].Extent.StartLineNumber))." } }
+    $sec = Get-OvModuleSecrets -Parsed $p
+    $added = @(); $existing = @()
+    foreach ($n in $sec.All) {
+        if ($secrets.Values.Keys | Where-Object { $_ -eq $n }) { $existing += $n } else { $added += $n }
+    }
+    if ($added.Count) {
+        if ($state.IsNew) { Save-WizardState -Quiet }   # creates client\
+        foreach ($n in $added) { $secrets.Values[$n] = '' }
+        Save-WizardSecrets; Update-SecretList
+    }
+    return @{ Ok = $true; Added = $added; Existing = $existing; Invalid = $sec.Invalid; Error = $null }
+}
+
+$ui.btnImportSecrets.Add_Click({
+    $dlg = New-Object Microsoft.Win32.OpenFileDialog
+    $dlg.Filter = 'PowerShell module (*.ps1)|*.ps1'
+    $modulesDir = Join-Path $ClientRoot 'Modules'
+    if (Test-Path $modulesDir) { $dlg.InitialDirectory = $modulesDir }
+    if (-not $dlg.ShowDialog($win)) { return }
+    $leaf = Split-Path $dlg.FileName -Leaf
+    $r = Import-WizardModuleSecrets -File $dlg.FileName
+    if (-not $r.Ok) { Show-Msg "$leaf could not be read: $($r.Error)" 'OK' 'Error' | Out-Null; return }
+    $lines = @()
+    if ($r.Added.Count)    { $lines += "Added: $($r.Added -join ', ')`nType a value for each one in the list." }
+    if ($r.Existing.Count) { $lines += "Already on this page: $($r.Existing -join ', ')" }
+    if ($r.Invalid.Count)  { $lines += "Not readable (use plain names in quotes): $($r.Invalid -join ', ')" }
+    if (-not $lines.Count) { $lines += "$leaf doesn't list any secrets.`n`nA module lists the secrets it needs in its Register function, for example:`n    Secrets = @('RmmSiteKey', 'RmmApiToken')" }
+    Show-Msg ($lines -join "`n`n") 'OK' $(if ($r.Added.Count) { 'Information' } else { 'None' }) | Out-Null
+    Set-Status "$leaf : $($r.Added.Count) secret(s) added, $($r.Existing.Count) already present."
+})
+
 function Read-Passphrase {
     # Small modal passphrase prompt. Returns the text, or $null when cancelled. -Confirm asks twice.
     param([string]$Title, [string]$Message, [switch]$Confirm)
@@ -781,14 +827,14 @@ $ui.btnBuildExe.Add_Click({
     $lockedClient = @(Get-ClientModuleInfo | Where-Object { $_.RequiresAuth -or $state.LockAll -or $state.Locked.Contains($_.Name) })
     $secretCount = (Get-WizardSecretSummary).Count
     if ($lockedClient.Count -or $secretCount) {
-        $msg = "The plain exe has no password:`n"
+        $msg = "The plain exe and folder build have no password:`n"
         if ($lockedClient.Count) { $msg += "`n - your locked modules ($(($lockedClient | ForEach-Object { $_.Label }) -join ', ')) are included unprotected and run without a password" }
         if ($secretCount) { $msg += "`n - your $secretCount secret(s) are NOT included, so modules that need them won't work" }
-        $msg += "`n`nUse 'Build locked exe' to protect them. Build the plain exe anyway?"
+        $msg += "`n`nUse 'Build locked exe' to protect them. Build them anyway?"
         if ((Show-Msg $msg 'YesNo' 'Warning') -ne 'Yes') { return }
     }
     Step-VersionIfRebuilt
-    Start-BuildJob -Title 'Build exe' -ScriptPath (Join-Path $Root 'build.ps1') -Params @{ SFX = $true } -SuccessNote "Output: $BuildsRoot"
+    Start-BuildJob -Title 'Build exe' -ScriptPath (Join-Path $Root 'build.ps1') -Params @{ SFX = $true; Folder = $true } -SuccessNote "Output: $BuildsRoot (the exe, plus a v<version> folder with a ready-to-run copy: run Launch.bat inside it)"
 })
 $ui.btnBuildLocked.Add_Click({
     if ($ui.pwd1.SecurePassword.Length -lt 8) { Show-Msg 'The password must be at least 8 characters.' 'OK' 'Warning' | Out-Null; return }

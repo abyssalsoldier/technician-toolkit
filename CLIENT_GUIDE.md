@@ -30,7 +30,7 @@ The toolkit reads `client\` at launch. This works the same way for `Launch.bat`,
    4. **Secrets:** values your modules need that must stay protected, such as RMM site keys and tokens (see [Secrets and locked kits](#secrets-and-locked-kits)).
    5. **Installers:** add your `.exe`/`.msi` installers, for example your RMM agent.
    6. **Updates:** choose how USB toolkits update (see [Updates](#updates)).
-   7. **Check & Build:** run the checks, then **Build exe**, **Build locked exe** or **Make USB**.
+   7. **Check & Build:** run the checks, then **Build exe + folder**, **Build locked exe** or **Make USB**.
 4. Your builds are in `C:\Toolkit\_builds\`. The exe names stay `EndpointToolkit.exe` and `EndpointToolkit_Locked.exe`, so existing ConnectWise Toolbox entries keep working.
 
 Run `Setup-Client.bat` again at any time to make changes. It loads your current settings.
@@ -82,6 +82,7 @@ function Register-AcmeRmm {
         EntryPoint     = 'Start-AcmeRmm'     # runs in a background runspace
         UIDefinition   = 'Get-AcmeRmmUI'     # optional: your own panel. Without it you get a "Run" button.
         MinCoreVersion = '2.1.0'             # optional: skipped (with a log warning) on older cores
+        Secrets        = @('AcmeRmmSiteKey') # every secret it reads with Get-ToolkitSecret (omit or @() for none)
     }
 }
 ```
@@ -108,7 +109,7 @@ If you need something that isn't on this list, ask the toolkit provider to add i
 - **Long work goes in the background** (`Start-ModuleInBackground`), never on the UI thread.
 - **The toolkit may run as SYSTEM** (ConnectWise backstage). No `Read-Host`, no `HKCU` / user-profile paths, no mapped drives.
 - **Never write under `dependencies\`.** Use `Get-ToolkitClientDataPath` or `C:\_INFO\`.
-- **No secrets in module files.** Put RMM site keys, tenant tokens and passwords on the **Secrets** page and read them with `Get-ToolkitSecret`. Tick **Lock** for every module that uses one.
+- **No secrets in module files.** List the names in `Secrets = @(...)`, read them with `Get-ToolkitSecret`, and enter the values on the **Secrets** page. Tick **Lock** for every module that uses one.
 - **Locked modules run from memory.** In a locked kit their `.ps1` file isn't on disk. Use `Get-ToolkitClientRoot` for your files (installers, resources), and `Get-ToolkitModuleScripts` to load modules in your own runspace, not a path to your module file.
 
 ---
@@ -116,6 +117,10 @@ If you need something that isn't on this list, ask the toolkit provider to add i
 ## Secrets and locked kits
 
 **Secrets page.** Add a name (for example `RmmSiteKey`) and its value. A module reads it with `Get-ToolkitSecret 'RmmSiteKey'`.
+
+- **Import secrets from module...** reads a module file and adds every secret it needs (its `Secrets = @(...)` list and its `Get-ToolkitSecret` calls), so you only type the values. Values you already entered are kept.
+- When you add a module that needs secrets on the **Modules** page, the wizard offers to add them for you.
+- You enter each value **once per PC**. Every later locked exe and USB uses it automatically.
 
 - On your PC the values are stored in `client\secrets.dat`, encrypted by Windows for **your Windows account on that PC only**. The names are also kept in `client\secrets-names.json` (names only, safe to commit to git).
 - **Moving to another PC:** **Export client package** includes the names. Tick **Include secret values** to also include the values, encrypted with a passphrase you choose; **Import** asks for it. Without the values, the wizard tells you which secrets still need one.
@@ -126,7 +131,7 @@ If you need something that isn't on this list, ask the toolkit provider to add i
 | Build | Locked modules | Secrets |
 |---|---|---|
 | `Launch.bat` from your folder | Unlocked (your test environment) | Read from your `secrets.dat` |
-| **Build exe** (`EndpointToolkit.exe`) | **Included unprotected**, no password | **Not included** |
+| **Build exe + folder** (`EndpointToolkit.exe`, plus a folder you run with `Launch.bat`: `_builds\v<version>_<date>\EndpointToolkit\`) | **Included unprotected**, no password | **Not included** |
 | **Build locked exe** | Encrypted inside the exe | Encrypted inside the exe |
 | **Make USB** | Encrypted on the stick | Encrypted on the stick |
 
@@ -194,6 +199,7 @@ A mistake in `branding.json` never stops the toolkit from starting. It uses the 
 |---|---|
 | `.\tools\Test-ClientOverlay.ps1` | Runs every check the wizard runs (overlay, modules, core integrity) |
 | `.\build.ps1 -SFX` | Zip + `_builds\EndpointToolkit.exe` |
+| `.\build.ps1 -SFX -Folder` | Same, plus a ready-to-run folder (`_builds\v<version>_<date>\EndpointToolkit\Launch.bat`). This is what the wizard's **Build exe + folder** runs |
 | `.\dependencies\Agent\Export-LockedToolkit.ps1` | `EndpointToolkit_Locked.exe` (asks for password and folder) |
 | `.\build.ps1 -Test` | Copies to `_builds\` and launches, for a quick test |
 
@@ -236,6 +242,8 @@ git add client; git commit -m "Add Acme client"; git push
 - Fixed: the USB self-update now uses a new, unique temp folder each time.
 - Fixed: the release workflow no longer pastes `ProductName` or the version into shell commands.
 - Changed: passwords for locked exes and USB sticks must be at least 8 characters.
+- New: the wizard's **Build exe + folder** (was **Build exe**) also makes a ready-to-run folder, `_builds\v<version>_<date>\EndpointToolkit\`, that you start with its `Launch.bat`. From the command line: `.\build.ps1 -Folder`.
+- New: modules list the secrets they need with `Secrets = @('Name', ...)` in their Register function. The Secrets page has **Import secrets from module...**, and adding a module offers to add its secrets. The checks warn when a module reads a secret it doesn't list.
 
 ### Core 2.2.0
 - New: **Secrets page** in the wizard and `Get-ToolkitSecret`. Values are protected by Windows on your PC and encrypted into locked exe/USB builds (see [Secrets and locked kits](#secrets-and-locked-kits)).

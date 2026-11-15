@@ -65,6 +65,7 @@ function Register-AcmeRmm {
         EntryPoint   = 'Start-AcmeRmm'     # required, function in this file, runs in a background runspace
         UIDefinition = 'Get-AcmeRmmUI'     # optional, function returning a WPF UIElement
         MinCoreVersion = '2.1.0'           # optional, the module is skipped on older cores
+        Secrets      = @('AcmeRmmSiteKey') # every secret it reads with Get-ToolkitSecret (omit or @() for none)
     }
 }
 ```
@@ -90,7 +91,7 @@ Required behavior:
 - **ConnectWise Toolbox / SYSTEM safe:** no `Read-Host`, no console prompts, no `$env:USERPROFILE` or `HKCU` assumptions, no mapped drives. Use WPF controls for input.
 - **Lightweight:** no new PowerShell modules from the Gallery, no large binaries unless the user asks. Installers go in `client/CustomInstallers/`. Warn the user about anything over ~25 MB.
 - **Never write, move or delete anything under `dependencies/`** or elsewhere in core. The validator scans for this, and the manifest catches anything it misses. Use `Get-ToolkitClientDataPath` or `C:\_INFO\`. If the module API above doesn't cover what's needed, tell the user it needs a core feature. Don't work around it.
-- **No secrets** in code or files: no RMM tenant or site keys, tokens or passwords. Tell the user to add each one on the wizard's **Secrets** page (give the exact name), read it with `Get-ToolkitSecret '<Name>'`, and set `RequiresAuth = $true` (or tell the user to tick Lock). Never touch `client/secrets.dat` (Windows DPAPI, per user) and never commit it.
+- **No secrets** in code or files: no RMM tenant or site keys, tokens or passwords. List each one in the Register `Secrets = @(...)` key (plain quoted names), read it with `Get-ToolkitSecret '<Name>'`, and set `RequiresAuth = $true` (or tell the user to tick Lock). Tell the user the exact names and what value each takes; the wizard's **Import secrets from module...** button (Secrets page) adds them from the `Secrets` list. Never touch `client/secrets.dat` (Windows DPAPI, per user) and never commit it.
 - **Locked modules run from memory.** In a locked exe or USB their `.ps1` is inside an encrypted vault (`client/.locked/vault.bin`), not on disk. Never build paths from the module file's own location, and load modules in a runspace with `Get-ToolkitModuleScripts`, not by file path.
 - Paths: build them with `Join-Path`. Never hardcode a drive letter or the toolkit folder. Client files (installers, resources) are under `Get-ToolkitClientRoot`, not `$toolkitRoot\Modules`.
 
