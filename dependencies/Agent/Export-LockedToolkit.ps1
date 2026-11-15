@@ -117,14 +117,18 @@ namespace EndpointToolkit
         {
             string exePath = Assembly.GetExecutingAssembly().Location;
             string tempDir = Path.Combine(Path.GetTempPath(), "EndpointToolkit_SC");
-            
+            // Extracted under a random name first, then renamed to EndpointToolkit_SC (see below)
+            string staging = Path.Combine(Path.GetTempPath(), "EndpointToolkit_SC_" + Guid.NewGuid().ToString("N"));
+
             // Fail closed: under ConnectWise/SYSTEM, TEMP is the shared C:\Windows\Temp where any user can
             // pre-create this folder (with planted .ps1 files and an ACL that blocks deletion). The kit is
-            // never extracted into a folder that could not be removed, re-secured and verified.
+            // never extracted into a folder that could not be removed, secured and verified.
+            // The private DACL is part of the folder's creation, so no other user ever gets a handle to it
+            // (creating first and securing afterwards leaves a window in which a handle can be opened and
+            // kept). Directory.Delete(recursive) does not follow junctions/symlinks (.NET Framework).
             try {
                 if (Directory.Exists(tempDir)) { Directory.Delete(tempDir, true); }
                 if (Directory.Exists(tempDir)) { throw new IOException("the previous copy could not be removed"); }
-                Directory.CreateDirectory(tempDir);
                 // Only this user, SYSTEM and Administrators may open the extracted kit
                 var me = System.Security.Principal.WindowsIdentity.GetCurrent().User;
                 var system = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.LocalSystemSid, null);
@@ -139,12 +143,15 @@ namespace EndpointToolkit
                 sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(me, full, inherit, none, allow));
                 sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(system, full, inherit, none, allow));
                 sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(admins, full, inherit, none, allow));
-                Directory.SetAccessControl(tempDir, sec);
-                // Verify: empty, owned by a trusted principal
-                if (Directory.GetFileSystemEntries(tempDir).Length > 0) { throw new IOException("the folder is not empty"); }
-                var owner = Directory.GetAccessControl(tempDir).GetOwner(typeof(System.Security.Principal.SecurityIdentifier));
+                if (Directory.Exists(staging)) { throw new IOException("the staging folder already exists"); }
+                Directory.CreateDirectory(staging, sec);
+                // Verify: a real folder (not a link), empty, owned by a trusted principal
+                if ((File.GetAttributes(staging) & FileAttributes.ReparsePoint) != 0) { throw new IOException("the folder is a link"); }
+                if (Directory.GetFileSystemEntries(staging).Length > 0) { throw new IOException("the folder is not empty"); }
+                var owner = Directory.GetAccessControl(staging).GetOwner(typeof(System.Security.Principal.SecurityIdentifier));
                 if (!(owner.Equals(me) || owner.Equals(system) || owner.Equals(admins))) { throw new IOException("the folder has an untrusted owner"); }
             } catch (Exception ex) {
+                try { if (Directory.Exists(staging)) { Directory.Delete(staging, true); } } catch { }
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Refusing to start: " + tempDir + " is not safe (" + ex.Message + "). Delete it as an administrator and run again.");
                 Console.ResetColor();
@@ -165,15 +172,19 @@ namespace EndpointToolkit
                 }
                 using (MemoryStream ms = new MemoryStream(all, zipStart, zipLength, false)) {
                     using (ZipArchive archive = new ZipArchive(ms, ZipArchiveMode.Read)) {
-                        archive.ExtractToDirectory(tempDir);
+                        archive.ExtractToDirectory(staging);
                     }
                 }
                 all = null;
+                // Atomic rename to the runtime name (ConnectWise entries and the cleanup expect EndpointToolkit_SC).
+                // Fails if someone re-created EndpointToolkit_SC in the meantime: fail closed.
+                Directory.Move(staging, tempDir);
             } catch (Exception ex) {
+                try { if (Directory.Exists(staging)) { Directory.Delete(staging, true); } } catch { }
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Extraction failed: " + ex.Message);
                 Console.ResetColor();
-                Console.ReadKey();
+                if (Environment.UserInteractive) { try { Console.ReadKey(); } catch { } }
                 return;
             }
 

@@ -225,12 +225,17 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName PresentationFramework
 
 $tempDir = Join-Path $env:TEMP "EndpointToolkit_SC"
+# Extracted under a random name first, then renamed to EndpointToolkit_SC (see below)
+$staging = Join-Path $env:TEMP ("EndpointToolkit_SC_" + [guid]::NewGuid().ToString('N'))
 # Fail closed: under SYSTEM, TEMP is the shared C:\Windows\Temp where any user can pre-create this
-# folder with planted files. Never extract into a folder that could not be removed and re-secured.
+# folder with planted files. Never extract into a folder that could not be removed, secured and verified.
+# The private DACL is part of the folder's creation, so no other user ever gets a handle to it.
+# [IO.Directory]::Delete(recursive) does not follow junctions/symlinks (Remove-Item -Recurse in
+# Windows PowerShell 5.1 can, which would delete files elsewhere as SYSTEM).
 try {
-    if (Test-Path -LiteralPath $tempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction Stop }
-    if (Test-Path -LiteralPath $tempDir) { throw 'the previous copy could not be removed' }
-    $null = New-Item -ItemType Directory -Path $tempDir -ErrorAction Stop
+    if ([System.IO.Directory]::Exists($tempDir)) { [System.IO.Directory]::Delete($tempDir, $true) }
+    if ([System.IO.Directory]::Exists($tempDir)) { throw 'the previous copy could not be removed' }
+    if ([System.IO.Directory]::Exists($staging)) { throw 'the staging folder already exists' }
     $me     = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
     $system = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
     $admins = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
@@ -240,25 +245,30 @@ try {
     foreach ($sid in $me, $system, $admins) {
         $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
     }
-    [System.IO.Directory]::SetAccessControl($tempDir, $acl)
-    if (@(Get-ChildItem -LiteralPath $tempDir -Force).Count -gt 0) { throw 'the folder is not empty' }
-    $owner = [System.IO.Directory]::GetAccessControl($tempDir).GetOwner([System.Security.Principal.SecurityIdentifier])
+    $null = [System.IO.Directory]::CreateDirectory($staging, $acl)
+    if ([System.IO.File]::GetAttributes($staging) -band [System.IO.FileAttributes]::ReparsePoint) { throw 'the folder is a link' }
+    if (@([System.IO.Directory]::GetFileSystemEntries($staging)).Count -gt 0) { throw 'the folder is not empty' }
+    $owner = [System.IO.Directory]::GetAccessControl($staging).GetOwner([System.Security.Principal.SecurityIdentifier])
     if (-not ($owner.Equals($me) -or $owner.Equals($system) -or $owner.Equals($admins))) { throw 'the folder has an untrusted owner' }
 } catch {
+    try { if ([System.IO.Directory]::Exists($staging)) { [System.IO.Directory]::Delete($staging, $true) } } catch { }
     [System.Windows.MessageBox]::Show("Refusing to start: $tempDir is not safe ($($_.Exception.Message)). Delete it as an administrator and run again.", "Error", "OK", "Error") | Out-Null
     exit 1
 }
 
 $zipPath = Join-Path $PSScriptRoot "endpoint-build-toolkit.zip"
 if (-not (Test-Path $zipPath)) {
+    try { [System.IO.Directory]::Delete($staging, $true) } catch { }
     [System.Windows.MessageBox]::Show("Fatal: Toolkit archive not found.", "Error", "OK", "Error") | Out-Null
     exit 1
 }
 
 try {
-    # Extract zip archive
+    # Extract zip archive, then atomically rename to the runtime name (fails if someone re-created
+    # EndpointToolkit_SC in the meantime: fail closed)
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $staging)
+    [System.IO.Directory]::Move($staging, $tempDir)
 
     # Launch Invoke-EndpointSetup.ps1 as Admin
     $setupScript = Join-Path $tempDir "dependencies\Invoke-EndpointSetup.ps1"
@@ -266,9 +276,9 @@ try {
 } catch {
     [System.Windows.MessageBox]::Show("Failed to launch toolkit: $($_.Exception.Message)", "Launch Error", "OK", "Error") | Out-Null
 } finally {
-    # Cleanup temp folder after exit
-    if (Test-Path $tempDir) {
-        Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    # Cleanup temp folders after exit (link-safe delete, see above)
+    foreach ($d in $staging, $tempDir) {
+        try { if ([System.IO.Directory]::Exists($d)) { [System.IO.Directory]::Delete($d, $true) } } catch { }
     }
 }
 '@

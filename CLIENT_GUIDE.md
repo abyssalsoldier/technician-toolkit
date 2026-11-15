@@ -96,7 +96,8 @@ function Register-AcmeRmm {
 | `New-ToolkitBrush`, `New-ToolkitBrush '#A6ADC8'`, `Get-ToolkitAccent` | Your brand color in your UI |
 | `Get-ToolkitClientRoot` | Path of `client\` at runtime, for example `Join-Path (Get-ToolkitClientRoot) 'CustomInstallers\agent.msi'` |
 | `Get-ToolkitClientDataPath ['name']` | A working folder for files your module writes **during a session** (wiped on Quit for USB/exe runs) |
-| `C:\_INFO\<YourModule>\` | Reports and anything that must survive (same as the core modules) |
+| `Get-ToolkitInfoPath 'YourModule'` | `C:\_INFO\<YourModule>\`, for reports and anything that must survive (same as the core modules). Created safely, and refused if another account prepared it (core 2.2.3+) |
+| `New-ToolkitPrivateDirectory <path>`, `Remove-ToolkitTree <path>` | A temp work folder only the toolkit can open (give it a unique name), and a delete that never follows links (core 2.2.3+) |
 | `Get-ToolkitProductName`, `Get-ToolkitBrandingValue <Key>` | Your branding values |
 | `Get-ToolkitSecret 'Name'` | A value from the wizard's **Secrets** page, or `$null` while the kit is still locked. Never log or display it. |
 | `foreach ($sb in Get-ToolkitModuleScripts) { . $sb }` | Load all modules (including unlocked ones that only exist in memory) inside your own runspace |
@@ -252,6 +253,16 @@ Then in the repo's **Settings → Actions → General**, tick **Allow GitHub Act
 ---
 
 ## Changelog
+
+### Core 2.2.3 (security fixes)
+- Fixed: under ConnectWise / SYSTEM, another user of the PC could race the exe while it prepared `C:\Windows\Temp\EndpointToolkit_SC`. The exe now extracts into a new folder that is private from the moment it exists, then renames it. **Rebuild your exes and replace them in ConnectWise Toolbox.**
+- Fixed: cleanup (closing the toolkit, the exe's temp folder, **Clear Temp Files**) no longer follows junctions or symbolic links another user planted in a temp folder. Before, this could delete files elsewhere with the toolkit's rights.
+- Fixed: a USB run as SYSTEM copied the toolkit into a temp folder that other users could add files to. The copy and every work folder (System Repair, Migration Assist, the self-update) are now private and uniquely named.
+- Fixed: `C:\_INFO\<Module>` is refused when it is a link or belongs to another account. When the toolkit creates it, administrators and SYSTEM have full control and other users can read.
+- Changed: passwords of locked exes, USB sticks and the wizard's client package are now protected with 600,000 PBKDF2 iterations (was 100,000), so guessing them offline is 6 times slower. Unlocking takes about a second. Older kits keep working. A client package made with this version needs this version's wizard to import.
+- Changed: Migration Assist export passphrases must be at least 8 characters (was 4). Old bundles still import.
+- New: Install Software logs who signed each local installer and warns about unsigned ones (it still runs them).
+- Changed (GitHub client repos): the **Core update** workflow runs the new core's checks in a separate job without access to your tokens, and posts the result as a comment on the pull request.
 
 ### Core 2.2.2
 - Changed: the core's release branch is now **`main`** (it was `master`; day-to-day core work is on `dev`). GitHub client repos update with `git fetch upstream --prune` and `git merge upstream/main`. Your own repo can keep releasing from `master`.

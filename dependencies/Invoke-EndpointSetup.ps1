@@ -108,10 +108,13 @@ if ($Localized -and $UsbDrive) {
         $usbSerial = Get-DriveSerial -DriveLetter $script:Toolkit.UsbDrive
         # Expand 8.3 short names (e.g. JESSER~1); module discovery compares against long file paths
         $longTemp  = (Get-Item -LiteralPath $env:TEMP).FullName
-        $localRoot = (New-Item -ItemType Directory -Path (Join-Path $longTemp "EndpointToolkit_$([guid]::NewGuid().ToString('N'))") -Force).FullName
+        $localRoot = Join-Path $longTemp "EndpointToolkit_$([guid]::NewGuid().ToString('N'))"
 
         $copyError = $null
         try {
+            # Private from creation: under SYSTEM, TEMP is C:\Windows\Temp, whose inherited ACL lets any user
+            # add files to sub folders (e.g. a .ps1 in dependencies\Core, which runs as SYSTEM)
+            $localRoot = New-ToolkitPrivateDirectory -Path $localRoot
             $copyError = Copy-ToolkitToLocal -Source $script:Toolkit.Parent -Destination $localRoot
         } catch {
             $copyError = $_.Exception.Message
@@ -132,7 +135,7 @@ if ($Localized -and $UsbDrive) {
             [System.Windows.MessageBox]::Show(
                 "Could not copy the toolkit locally ($copyError).`n`nThe toolkit will run from the USB. Do NOT unplug it while the toolkit is open.",
                 'Local copy failed', 'OK', 'Warning') | Out-Null
-            Remove-Item $localRoot -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-ToolkitTree -LiteralPath $localRoot
         }
     }
 }
@@ -157,17 +160,19 @@ $tempPaths = @(
     "$env:TEMP\endpoint-toolkit-update",
     "$env:TEMP\endpoint-toolkit-update.zip"
 )
+# Deletes never follow a junction/symlink (Remove-ToolkitTree): another user may have planted one in a
+# shared TEMP, and following it would delete files elsewhere with this session's rights.
 foreach ($p in $tempPaths) {
-    if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $p) { Remove-ToolkitTree -LiteralPath $p }
 }
 # Self-update working files (unique names since 2.2.1); normally removed by Update-UsbToolkit itself
 Get-ChildItem -LiteralPath $env:TEMP -Filter 'endpoint-toolkit-update_*' -Force -ErrorAction SilentlyContinue |
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    ForEach-Object { Remove-ToolkitTree -LiteralPath $_.FullName }
 
 # Remove the local copy made from the USB at startup
 if ($localCopyRoot -and (Split-Path $localCopyRoot -Leaf).StartsWith('EndpointToolkit_', [System.StringComparison]::OrdinalIgnoreCase)) {
     Set-Location $env:TEMP
-    Remove-Item $localCopyRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-ToolkitTree -LiteralPath $localCopyRoot
 }
 
 # Remove the folder the locked exe extracted itself to (%TEMP%\EndpointToolkit_SC)
@@ -176,7 +181,7 @@ $sfxParentLong = (Get-Item -LiteralPath (Split-Path $sfxRoot -Parent) -ErrorActi
 if ((Split-Path $sfxRoot -Leaf) -eq 'EndpointToolkit_SC' -and $sfxParentLong -and
     $sfxParentLong.TrimEnd('\') -eq (Get-Item -LiteralPath $env:TEMP).FullName.TrimEnd('\')) {
     Set-Location $env:TEMP
-    Remove-Item -LiteralPath $sfxRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-ToolkitTree -LiteralPath $sfxRoot
 }
 
 

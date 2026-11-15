@@ -3,8 +3,8 @@ name: Core update
 # CLIENT REPOS ONLY (does nothing in the core repo or without a client/ folder).
 # Every Monday (or by hand from the Actions tab) this checks the core for a new version. When there is
 # one, it merges it into a new branch core-update/v<version> off dev (or off the default branch when
-# there is no dev), bumps client/version.txt if it was already released, runs the overlay checks, and
-# opens a pull request into that branch. Merge it, test, then merge dev into main to release.
+# there is no dev), bumps client/version.txt if it was already released, opens a pull request into that
+# branch, and posts the overlay checks on it. Merge it, test, then merge dev into main to release.
 #
 # - Core files edited in this repo conflict with the update. The core's version is taken (the client
 #   boundary rule, AGENTS.md) and the pull request lists those files. A conflict inside client/ stops.
@@ -15,21 +15,30 @@ name: Core update
 # - Repo setting needed: Settings > Actions > General > "Allow GitHub Actions to create and approve
 #   pull requests" (not needed when CORE_UPDATE_TOKEN is set).
 # - Different core: set the repo variable CORE_REPO (owner/name). Default: abyssalsoldier/technician-toolkit.
+#
+# Security: the merged core is NOT reviewed yet, so its code never runs where a token that can push is
+# reachable. 'core-update' only runs git/gh (never the core's scripts); 'overlay-check' runs the core's
+# tools/Test-ClientOverlay.ps1 in its own job with no secrets and a read-only token; 'report' posts the
+# result. (Inside one job, code can read other processes' environment and use sudo on hosted runners.)
 
 on:
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+permissions: {}
 
 jobs:
   core-update:
     if: github.repository != 'abyssalsoldier/technician-toolkit'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      branch: ${{ steps.merge.outputs.branch }}
+      pr: ${{ steps.merge.outputs.pr }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -38,6 +47,7 @@ jobs:
           token: ${{ secrets.CORE_UPDATE_TOKEN || github.token }}
 
       - name: Merge the new core and open a pull request
+        id: merge
         env:
           GH_TOKEN: ${{ secrets.CORE_UPDATE_TOKEN || github.token }}
           CORE_REPO: ${{ vars.CORE_REPO || 'abyssalsoldier/technician-toolkit' }}
@@ -101,11 +111,6 @@ jobs:
             git commit -q -m "Bump client version to $BUMPED (core v$CORE_VER)"
           fi
 
-          # Same checks as before every client commit (AGENTS.md)
-          CHECK="$RUNNER_TEMP/check.txt"
-          if pwsh -NoProfile -File ./tools/Test-ClientOverlay.ps1 -CheckCore -Upstream upstream/main > "$CHECK" 2>&1; then CHECK_OK=yes; else CHECK_OK=no; fi
-          cat "$CHECK"
-
           BODY="$RUNNER_TEMP/body.md"
           {
             echo "Merges core **v$CORE_VER** (this branch had v$OLD_VER) from \`$CORE_REPO\`."
@@ -116,11 +121,7 @@ jobs:
               echo
             fi
             if [ -n "$BUMPED" ]; then echo "Client version bumped from $CLIENT_VER to **$BUMPED**, so the next release publishes."; echo; fi
-            if [ "$CHECK_OK" = yes ]; then echo "Overlay checks: **passed**."; else echo "Overlay checks: **FAILED**. Fix the errors below before merging."; fi
-            echo
-            echo '```'
-            tail -n 40 "$CHECK"
-            echo '```'
+            echo "Overlay checks (\`tools/Test-ClientOverlay.ps1 -CheckCore\`) run in a separate job and are posted as a comment on this pull request."
             echo
             echo "Next: merge this into \`$TARGET\`, test (\`Launch.bat\` or the wizard's Check), then merge \`$TARGET\` into \`main\` to release. Core changes: CLIENT_GUIDE.md, Changelog."
           } > "$BODY"
@@ -138,7 +139,75 @@ jobs:
             fi
             exit 0
           fi
-          if ! gh pr create --base "$TARGET" --head "$BRANCH" --title "Update core to v$CORE_VER" --body-file "$BODY"; then
+          if ! PR_URL=$(gh pr create --base "$TARGET" --head "$BRANCH" --title "Update core to v$CORE_VER" --body-file "$BODY"); then
             echo "::error::$BRANCH was pushed but the pull request couldn't be created. Enable Settings > Actions > General > 'Allow GitHub Actions to create and approve pull requests' (or set CORE_UPDATE_TOKEN), or open the pull request by hand."
             exit 1
           fi
+          echo "$PR_URL"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "pr=${PR_URL##*/}" >> "$GITHUB_OUTPUT"
+
+  overlay-check:
+    # Runs the merged (not yet reviewed) core's own check script: no secrets, read-only token
+    needs: core-update
+    if: needs.core-update.outputs.branch != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+      log: ${{ steps.check.outputs.log }}
+    steps:
+      - name: Checkout the core-update branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.core-update.outputs.branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Overlay checks
+        id: check
+        env:
+          CORE_REPO: ${{ vars.CORE_REPO || 'abyssalsoldier/technician-toolkit' }}
+        run: |
+          set -uo pipefail
+          if ! printf '%s' "$CORE_REPO" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then echo "::error::CORE_REPO is not owner/name."; exit 1; fi
+          git remote add upstream "https://github.com/$CORE_REPO.git"
+          git fetch -q upstream main
+          CHECK="$RUNNER_TEMP/check.txt"
+          if pwsh -NoProfile -File ./tools/Test-ClientOverlay.ps1 -CheckCore -Upstream upstream/main > "$CHECK" 2>&1; then OK=yes; else OK=no; fi
+          cat "$CHECK"
+          # Single line, base64: nothing in the log can inject other step outputs
+          echo "ok=$OK" >> "$GITHUB_OUTPUT"
+          echo "log=$(tail -n 40 "$CHECK" | head -c 6000 | base64 -w0)" >> "$GITHUB_OUTPUT"
+
+  report:
+    # Posts the result. Never checks out or runs repository code.
+    needs: [core-update, overlay-check]
+    if: always() && needs.core-update.outputs.pr != ''
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment the overlay checks on the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.core-update.outputs.pr }}
+          OK: ${{ needs.overlay-check.outputs.ok }}
+          LOG_B64: ${{ needs.overlay-check.outputs.log }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PR" | grep -Eq '^[0-9]+$' || { echo "::error::No pull request number."; exit 1; }
+          BODY="$RUNNER_TEMP/comment.md"
+          {
+            case "$OK" in
+              yes) echo "Overlay checks: **passed**." ;;
+              no)  echo "Overlay checks: **FAILED**. Fix the errors below before merging." ;;
+              *)   echo "Overlay checks: **did not run** (see the workflow run). Run \`.\\tools\\Test-ClientOverlay.ps1 -CheckCore\` locally before merging." ;;
+            esac
+            echo
+            echo '```'
+            printf '%s' "$LOG_B64" | base64 -d 2> /dev/null | sed 's/```/` ` `/g' || true
+            echo '```'
+          } > "$BODY"
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file "$BODY"

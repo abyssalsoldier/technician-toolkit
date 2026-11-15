@@ -222,8 +222,7 @@ function Invoke-MaPrintBrm {
     # Returns @{ Success; Message; TimedOut }.
     param([ValidateSet('Backup', 'Restore')][string]$Mode, [string]$BundleFile, [string]$Overwrite = 'KEEP')
     $brm = Join-Path $env:windir 'System32\spool\tools\PrintBrm.exe'
-    $work = Join-Path $env:windir ('Temp\MaBrm_' + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $work -Force | Out-Null
+    $work = New-ToolkitPrivateDirectory -Path (Join-Path $env:windir ('Temp\MaBrm_' + [guid]::NewGuid().ToString('N')))
     $tmpFile = Join-Path $work 'printers.printerExport'
     try {
         if ($Mode -eq 'Backup') {
@@ -249,7 +248,7 @@ function Invoke-MaPrintBrm {
         else { $msg = ("exit code {0}" -f $r.ExitCode) }
         return @{ Success = $false; TimedOut = $false; Message = $msg }
     } finally {
-        Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-ToolkitTree -LiteralPath $work
     }
 }
 
@@ -1092,8 +1091,7 @@ function Get-MaSummary {
 
 function Write-MaReport {
     param([string]$Mode, [System.Collections.ArrayList]$Results, [string]$BundlePath)
-    $outDir = 'C:\_INFO\MigrationAssist'
-    if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+    $outDir = Get-ToolkitInfoPath -Module 'MigrationAssist'   # C:\_INFO\MigrationAssist, refused if it is a link
     $file = Join-Path $outDir ("Migration_{0}_{1}_{2}.txt" -f $Mode, $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd-HHmm'))
     $lines = New-Object System.Collections.ArrayList
     $lines.Add("Migration Assist - $Mode") | Out-Null
@@ -1117,14 +1115,15 @@ function Invoke-MigrationExport {
         [bool]$IncludeDriverPackages = $true
     )
     Assert-MaAdmin
-    if (-not $Passphrase -or $Passphrase.Length -lt 4) { throw 'A passphrase of at least 4 characters is required.' }
+    # secrets.enc (Wi-Fi keys, drive credentials) travels on USB sticks and shares: guessable offline
+    if (-not $Passphrase -or $Passphrase.Length -lt 8) { throw 'A passphrase of at least 8 characters is required.' }
     if (-not (Test-Path $Destination)) { New-Item -ItemType Directory -Path $Destination -Force | Out-Null }
 
     $stamp = Get-Date -Format 'yyyyMMdd-HHmm'
     $bundle = Join-Path $Destination ("Migration_{0}_{1}" -f $env:COMPUTERNAME, $stamp)
     New-Item -ItemType Directory -Path $bundle -Force | Out-Null
-    $secrets = Join-Path $env:TEMP ('MaSecrets_' + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $secrets -Force | Out-Null
+    # Plaintext secrets live here until encrypted: private from creation (TEMP may be the shared C:\Windows\Temp)
+    $secrets = New-ToolkitPrivateDirectory -Path (Join-Path $env:TEMP ('MaSecrets_' + [guid]::NewGuid().ToString('N')))
 
     $results = New-Object System.Collections.ArrayList
     $secretsFile = $false
@@ -1166,7 +1165,7 @@ function Invoke-MigrationExport {
         }
         Save-MaJson $manifest (Join-Path $bundle 'manifest.json')
     } finally {
-        Remove-Item $secrets -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-ToolkitTree -LiteralPath $secrets
         $Passphrase = $null
     }
 
@@ -1213,14 +1212,14 @@ function Invoke-MigrationImport {
 
     $secrets = Join-Path $env:TEMP ('MaSecrets_' + [guid]::NewGuid().ToString('N'))
     try {
+        # Decrypted secrets land here: private from creation (TEMP may be the shared C:\Windows\Temp)
+        $secrets = New-ToolkitPrivateDirectory -Path $secrets
         $encFile = Join-Path $Bundle 'secrets.enc'
         $needSecrets = (@($Categories) -contains 'NetworkDrives') -or (@($Categories) -contains 'WifiNetwork')
         if ($needSecrets -and (Test-Path $encFile)) {
             if (-not $Passphrase) { throw 'This bundle has encrypted secrets; enter the passphrase.' }
             Unprotect-MigrationSecrets -File $encFile -DestDir $secrets -Passphrase $Passphrase
             Write-MaLog 'Secrets decrypted.' 'Success'
-        } else {
-            New-Item -ItemType Directory -Path $secrets -Force | Out-Null
         }
 
         foreach ($c in $Categories) {
@@ -1236,7 +1235,7 @@ function Invoke-MigrationImport {
             }
         }
     } finally {
-        Remove-Item $secrets -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-ToolkitTree -LiteralPath $secrets
         $Passphrase = $null
     }
 
@@ -1475,9 +1474,9 @@ function Get-MigrationAssistUI {
     $impPath.Button.Add_Click({ & $browse $impBox }.GetNewClosure())
 
     $openBtn.Add_Click({
-        $dir = 'C:\_INFO\MigrationAssist'
-        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-        Start-Process explorer.exe -ArgumentList $dir
+        try { $dir = Get-ToolkitInfoPath -Module 'MigrationAssist' }
+        catch { $Global:SyncHash.MigrationAssist.StatusText.Text = $_.Exception.Message; return }
+        Start-Process explorer.exe -ArgumentList "`"$dir`""
     }.GetNewClosure())
 
     $exportBtn.Add_Click({
@@ -1489,7 +1488,7 @@ function Get-MigrationAssistUI {
         if ($expSys.IsChecked) { $cats += 'SystemSettings' }
         if ($cats.Count -eq 0) { $h.StatusText.Text = 'Select at least one category.'; return }
         if (-not $expBox.Text.Trim()) { $h.StatusText.Text = 'Choose where to save the bundle.'; return }
-        if ($expPass.Password.Length -lt 4) { $h.StatusText.Text = 'Passphrase must be at least 4 characters.'; return }
+        if ($expPass.Password.Length -lt 8) { $h.StatusText.Text = 'Passphrase must be at least 8 characters.'; return }
         if ($expPass.Password -ne $expPass2.Password) { $h.StatusText.Text = 'Passphrases do not match.'; return }
         $params = @{
             Destination           = $expBox.Text.Trim()

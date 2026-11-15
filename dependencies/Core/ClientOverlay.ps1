@@ -226,7 +226,8 @@ function Get-ToolkitLogoPath {
     $clientRoot = Get-ToolkitClientRoot
     if (-not $clientRoot) { return $null }
     $full = [System.IO.Path]::GetFullPath((Join-Path $clientRoot $logo))
-    if (-not $full.StartsWith($clientRoot, [System.StringComparison]::OrdinalIgnoreCase)) { return $null }
+    # Compare with the trailing separator, or "..\client2\x.png" would pass as being inside client\
+    if (-not $full.StartsWith($clientRoot.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) { return $null }
     if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { return $null }
     if ((Get-Item -LiteralPath $full).Length -gt 256KB) { return $null }
     return $full

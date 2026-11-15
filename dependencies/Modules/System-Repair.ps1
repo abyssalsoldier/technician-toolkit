@@ -317,7 +317,9 @@ function Get-SystemRepairUI {
                             $before = [long](Get-ChildItem -LiteralPath $full -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
                         } else { $before = $item.Length }
 
-                        Remove-Item -LiteralPath $full -Recurse -Force -ErrorAction SilentlyContinue
+                        # Never follows a junction/symlink further down: any user can create folders in
+                        # C:\Windows\Temp and plant one pointing at files they could not delete themselves
+                        Remove-ToolkitTree -LiteralPath $full
 
                         if (Test-Path -LiteralPath $full) {
                             $skipped++
@@ -505,8 +507,16 @@ function Start-SystemRepairRun {
         $cfg = $SyncHash.SrConfig
         $sysDir = if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) { "$env:windir\Sysnative" } else { "$env:windir\System32" }
         $cbsLog = Join-Path $env:windir 'Logs\CBS\CBS.log'
-        $runDir = Join-Path $env:TEMP 'EndpointToolkit_SystemRepair'
-        New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+        # Per-run private folder for DISM's log. A fixed name in a shared TEMP (C:\Windows\Temp under SYSTEM)
+        # could be pre-created or made a junction by another user to redirect what DISM writes as SYSTEM.
+        try {
+            $runDir = New-ToolkitPrivateDirectory -Path (Join-Path $env:TEMP "EndpointToolkit_SystemRepair_$([guid]::NewGuid().ToString('N'))")
+        } catch {
+            Write-Log "System Repair: could not create a private work folder - $($_.Exception.Message)" -Level Error
+            $SyncHash.SrFinal = @{ Text = "Could not start: $($_.Exception.Message)"; Color = '#F38BA8' }
+            $SyncHash.SrDone = $true
+            return
+        }
 
         # ---- UI push: state goes through SyncHash, applied on the UI thread ----
         # The worker only writes plain data into SyncHash.SrUi; a DispatcherTimer on the UI thread
@@ -905,6 +915,7 @@ function Start-SystemRepairRun {
             }
             $SyncHash.SrFinal = @{ Text = $summary; Color = $color }
             $SyncHash.SrDone = $true   # UI timer applies the final state and stops itself
+            Remove-ToolkitTree -LiteralPath $runDir   # DISM keeps its own log in %windir%\Logs\DISM
         }
     }) | Out-Null
     $ps.BeginInvoke() | Out-Null

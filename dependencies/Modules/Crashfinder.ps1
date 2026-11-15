@@ -85,9 +85,9 @@ function Get-CrashfinderUI {
     }
 
     $openBtn.Add_Click({
-        $dir = 'C:\_INFO\Crashfinder'
-        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-        Start-Process explorer.exe -ArgumentList $dir
+        try { $dir = Get-ToolkitInfoPath -Module 'Crashfinder' }
+        catch { $Global:SyncHash.Crashfinder.StatusText.Text = $_.Exception.Message; return }
+        Start-Process explorer.exe -ArgumentList "`"$dir`""
     }.GetNewClosure())
 
     $runBtn.Add_Click({
@@ -140,12 +140,16 @@ function Start-Crashfinder {
 function Invoke-Crashfinder {
     param(
         [int]$Days = 30,
-        [string]$OutDir = 'C:\_INFO\Crashfinder',
+        [string]$OutDir,   # default C:\_INFO\Crashfinder (checked: not a link, trusted owner)
         [switch]$Quiet
     )
 
     $Since = (Get-Date).AddDays(-$Days)
-    if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir -Force | Out-Null }
+    if ($OutDir) {
+        if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir -Force | Out-Null }
+    } else {
+        $OutDir = Get-ToolkitInfoPath -Module 'Crashfinder'
+    }
     $Out = Join-Path $OutDir "Crashfinder_$($env:COMPUTERNAME)_$(Get-Date -f yyyyMMdd-HHmm).txt"
     $r = New-Object System.Collections.Generic.List[string]
     function Write-Section($t) { $r.Add(""); $r.Add("==== $t ====") }

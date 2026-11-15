@@ -19,7 +19,8 @@ function Get-ToolkitUsbSerial {
 
 # ---------------------------------------------------------------------------
 # Key files: .toolkit-key (USB) and .sfx-key (locked exe) hold the kit's main key, wrapped with the password.
-#   Current format: base64 of a TKB1 blob (Protect-ToolkitBlob -Passphrase: random salt, 100k PBKDF2, HMAC).
+#   Current format: base64 of a TKB2 blob (Protect-ToolkitBlob -Passphrase: random salt, 600k PBKDF2, HMAC).
+#   TKB1 blobs (core 2.2.1-2.2.2, 100k PBKDF2) are still read.
 #   Legacy format (core < 2.2.1): base64 of IV | AES-CBC, no MAC, salt derived from the password. Still
 #   read, but a result is only accepted when it has the shape of a real main key, because without a MAC a
 #   wrong password decrypts to garbage with valid padding about 1 time in 256.
@@ -46,7 +47,7 @@ function Unprotect-ToolkitKeyFile {
         [Parameter(Mandatory)][string]$LegacySecret
     )
     $payload = [Convert]::FromBase64String($EncryptedData.Trim())
-    if ($payload.Length -ge 4 -and [System.Text.Encoding]::ASCII.GetString($payload, 0, 4) -eq 'TKB1') {
+    if ($payload.Length -ge 4 -and [System.Text.Encoding]::ASCII.GetString($payload, 0, 4) -in 'TKB1', 'TKB2') {
         $key = [System.Text.Encoding]::UTF8.GetString((Unprotect-ToolkitBlob -Bytes $payload -Passphrase $Passphrase))
     } else {
         if ($payload.Length -lt 32) { throw 'The key file is too small or corrupted.' }
@@ -95,10 +96,15 @@ function Unprotect-SfxPassword {
 }
 
 # ---------------------------------------------------------------------------
-# Locked-kit primitives (vault, wizard secrets). Encrypt-then-MAC:
+# Locked-kit primitives (vault, wizard secrets). Encrypt-then-MAC. Written format (core 2.2.3+):
+#   'TKB2' | iterations(uint32 LE) | salt(16) | iv(16) | AES-256-CBC ciphertext | HMAC-SHA256(everything before)(32)
+#   master = PBKDF2-SHA256(secret, salt, iterations, 32 bytes); Enc/Mac = HMAC-SHA256(master, 'TKB2-enc'/'TKB2-mac')
+#   iterations: 600,000 for a passphrase (something a person typed: these files ship inside every locked
+#   exe and USB, so they can be attacked offline), 1,000 for a main key (32 random bytes).
+# Still read (core 2.2.1-2.2.2):
 #   'TKB1' | salt(16) | iv(16) | AES-256-CBC ciphertext | HMAC-SHA256(everything before)(32)
-# Keys come from PBKDF2-SHA256 over the secret (main key or passphrase) and the salt, split Enc/Mac.
-# A wrong key, a wrong passphrase or any edited byte throws; nothing is ever half-decrypted.
+#   Enc/Mac = PBKDF2-SHA256(secret, salt, 100,000 passphrase / 1,000 key, 64 bytes) split in two
+# A wrong key, a wrong passphrase or any edited byte (iterations included) throws; nothing is ever half-decrypted.
 # ---------------------------------------------------------------------------
 
 function New-ToolkitMainKey {
@@ -110,25 +116,50 @@ function New-ToolkitMainKey {
 }
 
 function Get-ToolkitBlobKeys {
+    # TKB1 keys
     param([string]$Secret, [byte[]]$Salt, [int]$Iterations)
     $d = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($Secret, $Salt, $Iterations, 'SHA256')
     try { return @{ Enc = $d.GetBytes(32); Mac = $d.GetBytes(32) } } finally { $d.Dispose() }
 }
 
+function Get-ToolkitBlobKeysV2 {
+    # TKB2 keys: one PBKDF2 block (32 bytes), then split with HMAC, so all iterations go to one block
+    param([string]$Secret, [byte[]]$Salt, [int]$Iterations)
+    $d = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($Secret, $Salt, $Iterations, 'SHA256')
+    try { $master = $d.GetBytes(32) } finally { $d.Dispose() }
+    $h = New-Object System.Security.Cryptography.HMACSHA256 (, $master)
+    try {
+        $enc = $h.ComputeHash([System.Text.Encoding]::ASCII.GetBytes('TKB2-enc'))
+        $mac = $h.ComputeHash([System.Text.Encoding]::ASCII.GetBytes('TKB2-mac'))
+    } finally { $h.Dispose(); [Array]::Clear($master, 0, $master.Length) }
+    return @{ Enc = $enc; Mac = $mac }
+}
+
+function Test-ToolkitBlobMac {
+    # Constant-time check of the trailing HMAC-SHA256 over everything before it
+    param([byte[]]$Bytes, [byte[]]$MacKey)
+    $bodyLen = $Bytes.Length - 32
+    $hmac = New-Object System.Security.Cryptography.HMACSHA256 (, $MacKey)
+    try { $expected = $hmac.ComputeHash($Bytes, 0, $bodyLen) } finally { $hmac.Dispose() }
+    $diff = 0
+    for ($i = 0; $i -lt 32; $i++) { $diff = $diff -bor ($expected[$i] -bxor $Bytes[$bodyLen + $i]) }
+    return ($diff -eq 0)
+}
+
 function Protect-ToolkitBlob {
     # -Key: a main key from New-ToolkitMainKey (high entropy, so a low iteration count is enough).
-    # -Passphrase: something a person typed (100k iterations).
+    # -Passphrase: something a person typed (600k iterations).
     param(
         [Parameter(Mandatory)][byte[]]$Bytes,
         [string]$Key,
         [string]$Passphrase
     )
     $secret = if ($Key) { $Key } elseif ($Passphrase) { $Passphrase } else { throw 'Protect-ToolkitBlob needs -Key or -Passphrase.' }
-    $iterations = if ($Key) { 1000 } else { 100000 }
+    $iterations = if ($Key) { 1000 } else { 600000 }
     $salt = New-Object byte[] 16
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($salt) } finally { $rng.Dispose() }
-    $keys = Get-ToolkitBlobKeys -Secret $secret -Salt $salt -Iterations $iterations
+    $keys = Get-ToolkitBlobKeysV2 -Secret $secret -Salt $salt -Iterations $iterations
 
     $aes = [System.Security.Cryptography.Aes]::Create()
     try {
@@ -139,8 +170,10 @@ function Protect-ToolkitBlob {
     } finally { $aes.Dispose() }
 
     $ms = New-Object System.IO.MemoryStream
-    $magic = [System.Text.Encoding]::ASCII.GetBytes('TKB1')
-    $ms.Write($magic, 0, 4); $ms.Write($salt, 0, 16); $ms.Write($iv, 0, 16); $ms.Write($cipher, 0, $cipher.Length)
+    $magic = [System.Text.Encoding]::ASCII.GetBytes('TKB2')
+    $iterBytes = [BitConverter]::GetBytes([uint32]$iterations)
+    if (-not [BitConverter]::IsLittleEndian) { [Array]::Reverse($iterBytes) }
+    $ms.Write($magic, 0, 4); $ms.Write($iterBytes, 0, 4); $ms.Write($salt, 0, 16); $ms.Write($iv, 0, 16); $ms.Write($cipher, 0, $cipher.Length)
     $body = $ms.ToArray()
     $hmac = New-Object System.Security.Cryptography.HMACSHA256 (, $keys.Mac)
     try { $tag = $hmac.ComputeHash($body) } finally { $hmac.Dispose() }
@@ -151,31 +184,45 @@ function Protect-ToolkitBlob {
 }
 
 function Unprotect-ToolkitBlob {
+    # Reads TKB2 and TKB1 blobs (see the format notes above)
     param(
         [Parameter(Mandatory)][byte[]]$Bytes,
         [string]$Key,
         [string]$Passphrase
     )
     $secret = if ($Key) { $Key } elseif ($Passphrase) { $Passphrase } else { throw 'Unprotect-ToolkitBlob needs -Key or -Passphrase.' }
-    $iterations = if ($Key) { 1000 } else { 100000 }
-    if ($Bytes.Length -lt (4 + 16 + 16 + 16 + 32)) { throw 'The protected data is too small or corrupted.' }
-    if ([System.Text.Encoding]::ASCII.GetString($Bytes, 0, 4) -ne 'TKB1') { throw 'The protected data has an unknown format.' }
-    $salt = New-Object byte[] 16; [Array]::Copy($Bytes, 4, $salt, 0, 16)
-    $iv = New-Object byte[] 16;   [Array]::Copy($Bytes, 20, $iv, 0, 16)
-    $keys = Get-ToolkitBlobKeys -Secret $secret -Salt $salt -Iterations $iterations
+    if ($Bytes.Length -lt 4) { throw 'The protected data is too small or corrupted.' }
+    $magic = [System.Text.Encoding]::ASCII.GetString($Bytes, 0, 4)
+    if ($magic -eq 'TKB2') {
+        $header = 4 + 4 + 16 + 16
+        if ($Bytes.Length -lt ($header + 16 + 32)) { throw 'The protected data is too small or corrupted.' }
+        $iterBytes = New-Object byte[] 4; [Array]::Copy($Bytes, 4, $iterBytes, 0, 4)
+        if (-not [BitConverter]::IsLittleEndian) { [Array]::Reverse($iterBytes) }
+        $iterations = [BitConverter]::ToUInt32($iterBytes, 0)
+        # Bounded so an edited file can't hang the unlock; the MAC covers the count, so this is only a sanity check
+        if ($iterations -lt 1000 -or $iterations -gt 10000000) { throw 'The protected data is corrupted (iteration count).' }
+        $salt = New-Object byte[] 16; [Array]::Copy($Bytes, 8, $salt, 0, 16)
+        $iv = New-Object byte[] 16;   [Array]::Copy($Bytes, 24, $iv, 0, 16)
+        $keys = Get-ToolkitBlobKeysV2 -Secret $secret -Salt $salt -Iterations ([int]$iterations)
+    } elseif ($magic -eq 'TKB1') {
+        $header = 4 + 16 + 16
+        if ($Bytes.Length -lt ($header + 16 + 32)) { throw 'The protected data is too small or corrupted.' }
+        $iterations = if ($Key) { 1000 } else { 100000 }
+        $salt = New-Object byte[] 16; [Array]::Copy($Bytes, 4, $salt, 0, 16)
+        $iv = New-Object byte[] 16;   [Array]::Copy($Bytes, 20, $iv, 0, 16)
+        $keys = Get-ToolkitBlobKeys -Secret $secret -Salt $salt -Iterations $iterations
+    } else {
+        throw 'The protected data has an unknown format.'
+    }
+
+    if (-not (Test-ToolkitBlobMac -Bytes $Bytes -MacKey $keys.Mac)) { throw 'Wrong password, or the protected data was changed.' }
 
     $bodyLen = $Bytes.Length - 32
-    $hmac = New-Object System.Security.Cryptography.HMACSHA256 (, $keys.Mac)
-    try { $expected = $hmac.ComputeHash($Bytes, 0, $bodyLen) } finally { $hmac.Dispose() }
-    $diff = 0
-    for ($i = 0; $i -lt 32; $i++) { $diff = $diff -bor ($expected[$i] -bxor $Bytes[$bodyLen + $i]) }
-    if ($diff -ne 0) { throw 'Wrong password, or the protected data was changed.' }
-
     $aes = [System.Security.Cryptography.Aes]::Create()
     try {
         $aes.Key = $keys.Enc
         $aes.IV = $iv
-        $plain = $aes.CreateDecryptor().TransformFinalBlock($Bytes, 36, $bodyLen - 36)
+        $plain = $aes.CreateDecryptor().TransformFinalBlock($Bytes, $header, $bodyLen - $header)
     } finally { $aes.Dispose() }
     return , $plain
 }

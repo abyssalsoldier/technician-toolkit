@@ -532,6 +532,18 @@ function Get-SoftwareManagerUI {
 
                 } elseif ($pkg.Source -eq 'local') {
                     try {
+                        # Local installers run elevated and are not covered by the kit's integrity check
+                        # (technicians add their own), so show who signed each one. Warning only, never blocks.
+                        try {
+                            $sig = Get-AuthenticodeSignature -LiteralPath $pkg.Path -ErrorAction Stop
+                            if ($sig.Status -eq 'Valid') {
+                                Write-Log "  Signed by: $($sig.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false))" -Level Info
+                            } else {
+                                Write-Log "  Warning: $(Split-Path $pkg.Path -Leaf) has no valid digital signature ($($sig.Status)). Make sure it came from a trusted source." -Level Warning
+                            }
+                        } catch {
+                            Write-Log "  Warning: the signature of $(Split-Path $pkg.Path -Leaf) could not be checked ($($_.Exception.Message))." -Level Warning
+                        }
                         if ($pkg.Path -match '\.msi$') {
                             $installArgs = if ($IsSilent) { "/i `"$($pkg.Path)`" /qn /norestart" } else { "/i `"$($pkg.Path)`" /norestart" }
                             $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $installArgs -Wait -PassThru

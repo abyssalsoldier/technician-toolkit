@@ -70,7 +70,9 @@ function Copy-ToolkitToLocal {
 
     # Start-Process does not quote array elements, so names with spaces must be quoted here
     $quotedExcludes = $excludes | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
-    $logPath = Join-Path $env:TEMP 'toolkit-local-copy.log'
+    # Unique name: a fixed name in a shared TEMP (C:\Windows\Temp under SYSTEM) can be pre-created by another
+    # user, who could then read the log and learn where the private local copy is
+    $logPath = Join-Path $env:TEMP "toolkit-local-copy_$([guid]::NewGuid().ToString('N')).log"
     $copyArgs = @($srcArg, $dstArg, '/E') + $quotedExcludes + @('/XJ', '/NP', '/R:1', '/W:1', "/LOG:`"$logPath`"")
     $proc = Start-Process robocopy -ArgumentList $copyArgs -PassThru -WindowStyle Hidden
 
@@ -102,6 +104,7 @@ function Copy-ToolkitToLocal {
         if ($errLines.Count) { $msg += ": " + ($errLines -join ' | ') }
         return "$msg (log: $logPath)"
     }
+    Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
     return $null
 }
 
@@ -184,7 +187,7 @@ function Update-UsbToolkit {
     $fail = {
         param([string]$Message)
         Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
-        Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-ToolkitTree -LiteralPath $tempExtract
         [System.Windows.MessageBox]::Show(
             "$Message`n`nContinuing with the USB version (v$localVersion).",
             'Update Failed', 'OK', 'Warning') | Out-Null
@@ -218,7 +221,9 @@ function Update-UsbToolkit {
 
     # Extract and deploy
     try {
-        if (Test-Path -LiteralPath $tempExtract) { throw "$tempExtract already exists" }
+        # Private from creation (throws when the name already exists), so nothing can be added to the
+        # release between extraction and the copy onto the USB
+        $null = New-ToolkitPrivateDirectory -Path $tempExtract
         Expand-Archive -Path $tempZip -DestinationPath $tempExtract
     } catch {
         & $fail "Could not extract the update: $($_.Exception.Message)"
@@ -281,7 +286,7 @@ function Update-UsbToolkit {
     }
 
     Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
-    Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-ToolkitTree -LiteralPath $tempExtract
 
     if ($p1.ExitCode -ge 8 -or $exit2 -ge 8) {
         [System.Windows.MessageBox]::Show(
