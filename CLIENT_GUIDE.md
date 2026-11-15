@@ -215,13 +215,13 @@ git clone https://github.com/abyssalsoldier/technician-toolkit.git acme-toolkit 
 cd acme-toolkit
 git remote rename origin upstream
 git remote add origin https://github.com/acme-it/acme-endpoint-toolkit.git        # your empty repo
-git push -u origin master
+git push -u origin main
 .\Setup-Client.bat                                  # create client\ with the wizard
 git add client; git commit -m "Add Acme client"; git push
 ```
 
-- **Releases:** the included workflow (`.github/workflows/release.yml`) builds from `client\version.txt`, runs the checks, and publishes to *your* repo's Releases when you push a version bump to `master`. Set Updates to "My own update feed" with `https://github.com/<you>/<repo>/releases/latest/download`. The feed must be **public**, because USB toolkits download without signing in. Otherwise use automatic core updates or host the files yourself.
-- **Updating core:** `git fetch upstream`, then `git merge upstream/master`, then `.\tools\Test-ClientOverlay.ps1 -CheckCore`, then bump your version and push. If you only changed `client\`, the merge is always clean.
+- **Releases:** the included workflow (`.github/workflows/release.yml`) builds from `client\version.txt`, runs the checks, and publishes to *your* repo's Releases when you push a version bump to `main` (or `master`, if your repo still uses it). Set Updates to "My own update feed" with `https://github.com/<you>/<repo>/releases/latest/download`. The feed must be **public**, because USB toolkits download without signing in. Otherwise use automatic core updates or host the files yourself.
+- **Updating core:** `git fetch upstream --prune`, then `git merge upstream/main`, then `.\tools\Test-ClientOverlay.ps1 -CheckCore`, then bump your version and push. If you only changed `client\`, the merge is always clean.
 
 ---
 
@@ -246,6 +246,8 @@ git add client; git commit -m "Add Acme client"; git push
 - New: the wizard's **Build exe + folder** (was **Build exe**) also makes a ready-to-run folder, `_builds\v<version>_<date>\EndpointToolkit\`, that you start with its `Launch.bat`. From the command line: `.\build.ps1 -Folder`.
 - Changed: the plain exe, folder build and zip (`build.ps1` without `-Dev`/`-Test`) **leave out locked modules**, because they have no password. Before, they included them unprotected. Ship locked modules with **Build locked exe** or a USB.
 - New: locked modules show a lock icon in the menu, as well as `[LOCKED]`.
+- Changed: the core's release branch is now **`main`** (it was `master`; day-to-day core work is on `dev`). GitHub client repos update with `git fetch upstream --prune` and `git merge upstream/main`. Your own repo can keep releasing from `master`.
+- New: every release also has the ready-to-run **`EndpointToolkit.exe`**, next to `latest.zip` and `client-kit.zip`.
 - New: **Output folder** on the Check & Build page (with **Browse...** and **Default**) chooses where the exe, folder build and locked exe go. Command line: `-OutputPath`.
 - New: modules list the secrets they need with `Secrets = @('Name', ...)` in their Register function. The Secrets page has **Import secrets from module...**, and adding a module offers to add its secrets. The checks warn when a module reads a secret it doesn't list.
 

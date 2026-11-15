@@ -111,7 +111,7 @@ The USB Toolkit allows you to build a secure, portable version for client sites.
 ### 🔄 Updating the Toolkit
 * USB toolkits update themselves from the GitHub releases of `abyssalsoldier/technician-toolkit` whenever they're launched with internet access. You're only prompted when a **newer** version exists.
 * A USB with locked modules doesn't self-update. Re-create it with **USB Toolkit** from the new version.
-* **To publish a new version:** bump `dependencies/version.txt`, commit, and push to `master`. The GitHub Action builds and publishes the release automatically.
+* **To publish a new version:** bump `dependencies/version.txt` on `dev`, merge `dev` into `main`, and push `main`. The GitHub Action builds and publishes the release automatically.
 
 ---
 

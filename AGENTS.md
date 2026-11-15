@@ -33,7 +33,7 @@ If it's unclear, ask the user before editing anything.
 ```powershell
 git status                                  # must be clean first
 git fetch upstream
-git merge upstream/master                   # clean if the boundary was respected
+git merge upstream/main                     # clean if the boundary was respected (the core branch was master before v2.2.1)
 .\tools\Test-ClientOverlay.ps1 -CheckCore   # must exit 0
 ```
 - **Conflict in a path outside `client/`:** resolve with `git checkout --theirs -- <path>` (take core), then `git add <path>`. Never keep a local version of a core file. Tell the user which files conflicted, because a local core edit existed.
@@ -42,7 +42,7 @@ git merge upstream/master                   # clean if the boundary was respecte
 - If `upstream` is missing: `git remote add upstream https://github.com/abyssalsoldier/technician-toolkit.git`
 
 ### Ship a release
-Bump `client/version.txt` (semantic version, always higher than the last release), commit, and push to `master`. CI publishes `v<version>` to this repo's Releases. Bump the patch for fixes and core updates, the minor for new modules or features, the major for breaking changes to how technicians use the toolkit.
+Bump `client/version.txt` (semantic version, always higher than the last release), commit, and push to your release branch (`main`, or `master` in client repos created before v2.2.1). CI publishes `v<version>` to this repo's Releases. Bump the patch for fixes and core updates, the minor for new modules or features, the major for breaking changes to how technicians use the toolkit.
 
 ### Before every commit
 ```powershell
@@ -101,7 +101,7 @@ Required behavior:
 - Don't hardcode the update URL. It comes from `branding.json` (client) or `Get-ToolkitCoreDefaults` (core).
 - Don't point a client's `UpdateBaseUrl` at the core release feed.
 - Don't commit `*.key`, `.toolkit-key`, `.sfx-key`, `client/secrets.dat`, `client/secrets.pkg`, `_builds/` or zips. (`client/secrets-names.json` holds names only and may be committed.)
-- Don't push, tag or publish releases unless the user asks. A push to `master` with a bumped version publishes a release automatically.
+- Don't push, tag or publish releases unless the user asks. A push to `main` (or `master` in an older client repo) with a bumped version publishes a release automatically.
 
 ## 6. Core repo (maintainers)
 
@@ -117,5 +117,6 @@ The core is the source of truth for every client. Clients merge it without revie
 - New UI uses `Get-ToolkitAccent` / `New-ToolkitBrush`, not `#89B4FA`. XAML may use `#FF89B4FA`, because `Load-XamlWindow` swaps it for the brand color.
 - New repo-only files (docs, tooling) must be excluded from payloads in **both** `Get-ToolkitPayloadExcludes` (ClientOverlay.ps1) and the zip step in `.github/workflows/release.yml`.
 - Startup cost matters (ConnectWise Toolbox): nothing new at startup that does network calls, loads assemblies or prompts. Overlay problems become warnings, never failures.
-- Release: bump `dependencies/version.txt` and push to `master`. Clients pick it up with `git merge upstream/master`.
+- **Branches:** day-to-day core work goes on `dev`, which publishes nothing. `main` is the release branch: clients merge it, releases and the download site (`website/`) come from it. Never commit straight to `main`.
+- Release: bump `dependencies/version.txt` on `dev`, then merge `dev` into `main` and push `main` (only when the user asks). Clients pick it up with `git merge upstream/main`.
 - Before committing, run `.\tools\Test-ClientOverlay.ps1` both with and without a test `client/` folder, and `.\build.ps1 -Test`.

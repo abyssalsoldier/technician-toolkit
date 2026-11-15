@@ -339,7 +339,8 @@ function Get-ToolkitPayloadExcludes {
     param([Parameter(Mandatory)][string]$Root)
     return @{
         # client\_removed = wizard undo bin, client\Data = module working data: neither ships
-        Dirs  = @('tools', 'client.example', 'client\_removed', 'client\Data') | ForEach-Object { Join-Path $Root $_ }
+        # website = the download site (hosted separately, see website\README.md)
+        Dirs  = @('tools', 'client.example', 'client\_removed', 'client\Data', 'website') | ForEach-Object { Join-Path $Root $_ }
         # client\secrets.* = the wizard's secret store (DPAPI) and package copy: never shipped in plain
         # form; locked builds put the values into the encrypted vault (LockedPayload.ps1)
         Files = @('AGENTS.md', 'CLAUDE.md', 'CLIENT_GUIDE.md', 'Setup-Client.bat', 'client\secrets.dat', 'client\secrets.pkg', 'client\secrets-names.json') | ForEach-Object { Join-Path $Root $_ }

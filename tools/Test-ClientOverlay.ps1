@@ -23,7 +23,7 @@
 param(
     [string]$Path,
     [switch]$CheckCore,
-    [string]$Upstream = 'upstream/master',
+    [string]$Upstream = 'upstream/main',   # the core publishes from main (it was master before v2.2.1)
     [switch]$SkipIntegrity    # core maintainers / CI on the core repo only
 )
 
@@ -71,7 +71,11 @@ if ($CheckCore) {
     try {
         git rev-parse --verify --quiet $Upstream *> $null
         if ($LASTEXITCODE -ne 0) {
-            $r.Errors += "Ref '$Upstream' not found. Run: git remote add upstream <core repo url>; git fetch upstream"
+            if ($Upstream -eq 'upstream/main' -and (git rev-parse --verify --quiet 'upstream/master' 2>$null)) {
+                $r.Errors += "The core now publishes from 'main' (it was 'master'). Run: git fetch upstream --prune, then use git merge upstream/main"
+            } else {
+                $r.Errors += "Ref '$Upstream' not found. Run: git remote add upstream <core repo url>; git fetch upstream"
+            }
         } else {
             $mergeBase = (git merge-base HEAD $Upstream).Trim()
             $changed = @(git -c core.safecrlf=false diff --name-only $mergeBase 2>$null) + @(git ls-files --others --exclude-standard 2>$null)

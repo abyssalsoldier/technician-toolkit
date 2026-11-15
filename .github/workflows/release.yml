@@ -1,6 +1,8 @@
 name: Build Release
 
-# Publishes a GitHub Release whenever the toolkit version is bumped on master.
+# Publishes a GitHub Release whenever the toolkit version is bumped on main (the release branch;
+# day-to-day work happens on dev and publishes nothing). Client repos that still use master also publish.
+# Every release also gets the ready-to-run exe (built on Windows by the 'exe' job).
 #   Core repo   : version = dependencies/version.txt
 #   Client repo : version = client/version.txt (the client overlay, see CLIENT_GUIDE.md)
 # Releases go to THIS repository (github.repository), so a client repo publishes to its own feed.
@@ -9,7 +11,7 @@ name: Build Release
 
 on:
   push:
-    branches: [master]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -18,7 +20,11 @@ permissions:
 jobs:
   release:
     name: Package and publish release
+    # Only the release branch publishes (also when started by hand from the Actions tab)
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -116,7 +122,8 @@ jobs:
             -x "*.key" \
             -x "build.ps1" \
             -x ".vscode/*" \
-            -x "_builds/*"
+            -x "_builds/*" \
+            -x "website/*"
 
       - name: Create client kit (core repo only)
         # Everything a client needs to set up a branded toolkit WITHOUT GitHub: the full core including
@@ -131,6 +138,7 @@ jobs:
             -x "*.key" \
             -x "client/secrets.dat" \
             -x "client/secrets.pkg" \
+            -x "website/*" \
             -x "latest.zip"
 
       - name: Generate SHA-256 checksum
@@ -157,3 +165,32 @@ jobs:
             --generate-notes \
             --latest
           echo "Published v${VERSION}"
+
+  exe:
+    name: Attach the exe to the release
+    # Runs for new and existing releases: an older release without an exe gets one
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build the exe and attach it (unless the release already has one)
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          $tag = "v$env:VERSION"
+          $assets = @(gh release view $tag --json assets --jq '.assets[].name')
+          if ($LASTEXITCODE -ne 0) { Write-Host "No release $tag yet - nothing to attach."; exit 0 }
+          if ($assets -like '*.exe') { Write-Host "$tag already has an exe."; exit 0 }
+          # Outside the checkout, so nothing from this step ends up inside the exe
+          $out = Join-Path $env:RUNNER_TEMP 'exe-out'
+          & .\build.ps1 -SFX -OutputPath $out
+          if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed (exit $LASTEXITCODE)" }
+          $exe = Get-ChildItem -LiteralPath $out -Filter '*.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'build.ps1 produced no exe' }
+          gh release upload $tag $exe.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Uploading the exe failed' }
+          Write-Host "Attached $($exe.Name) to $tag"

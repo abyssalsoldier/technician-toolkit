@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Technician Toolkit</title>
+<meta name="description" content="Download the Technician Toolkit: a PowerShell endpoint toolkit for MSP technicians.">
+<style>
+  :root {
+    --bg: #f6f7fb; --surface: #ffffff; --border: #dde1ea; --text: #1e2230; --muted: #5d6475;
+    --accent: #2f6fd6; --accent-text: #ffffff; --code: #eef1f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11131a; --surface: #1a1d27; --border: #2c3140; --text: #e3e6ee; --muted: #9aa1b2;
+            --accent: #89b4fa; --accent-text: #11131a; --code: #232736; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 2.1rem; margin: 0 0 8px; }
+  .lead { color: var(--muted); font-size: 1.1rem; margin: 0 0 8px; max-width: 640px; }
+  .release { color: var(--muted); font-size: .95rem; margin: 0 0 32px; min-height: 1.5em; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+          padding: 22px; display: flex; flex-direction: column; }
+  .card h2 { font-size: 1.15rem; margin: 0 0 4px; }
+  .tag { font-size: .8rem; color: var(--muted); margin: 0 0 12px; }
+  .card p { margin: 0 0 12px; }
+  .card ul { margin: 0 0 18px; padding-left: 18px; color: var(--muted); font-size: .95rem; }
+  .btn { margin-top: auto; display: inline-block; text-align: center; text-decoration: none;
+         background: var(--accent); color: var(--accent-text); font-weight: 600;
+         padding: 11px 16px; border-radius: 8px; }
+  .btn:hover, .btn:focus-visible { filter: brightness(1.08); }
+  .size { font-weight: 400; opacity: .85; }
+  section.notes { margin-top: 40px; color: var(--muted); font-size: .95rem; }
+  section.notes h3 { color: var(--text); font-size: 1rem; margin: 24px 0 6px; }
+  code { background: var(--code); padding: 1px 6px; border-radius: 4px; font-size: .9em; word-break: break-all; }
+  a { color: var(--accent); }
+  footer { margin-top: 48px; font-size: .85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Technician Toolkit</h1>
+  <p class="lead">A PowerShell endpoint toolkit for MSP technicians: setup, software installs, repair, diagnostics and migration from one window. It runs from a USB stick, an exe, or ConnectWise Control Toolbox.</p>
+  <p class="release" id="release">Latest release</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Ready-to-run exe</h2>
+      <p class="tag">EndpointToolkit.exe</p>
+      <p>One file. Double-click it on the PC you're working on.</p>
+      <ul>
+        <li>Asks for administrator rights</li>
+        <li>Works with ConnectWise Control Toolbox</li>
+      </ul>
+      <a class="btn" id="dl-exe" href="https://github.com/abyssalsoldier/technician-toolkit/releases/latest/download/EndpointToolkit.exe">Download exe <span class="size"></span></a>
+    </div>
+
+    <div class="card">
+      <h2>Ready-to-extract zip</h2>
+      <p class="tag">latest.zip</p>
+      <p>The same toolkit as a folder. Extract it anywhere and run <code>Launch.bat</code>.</p>
+      <ul>
+        <li>Good for USB sticks and network shares</li>
+        <li>Checksum: <code id="sha">see latest.sha256</code></li>
+      </ul>
+      <a class="btn" id="dl-zip" href="https://github.com/abyssalsoldier/technician-toolkit/releases/latest/download/latest.zip">Download zip <span class="size"></span></a>
+    </div>
+
+    <div class="card">
+      <h2>Client kit</h2>
+      <p class="tag">client-kit.zip</p>
+      <p>The full program, for building your own branded version. Extract it and run <code>Setup-Client.bat</code>.</p>
+      <ul>
+        <li>Your name, colors, logo and modules</li>
+        <li>Password-locked exe and USB builds</li>
+        <li>Guides included (CLIENT_GUIDE.md)</li>
+      </ul>
+      <a class="btn" id="dl-kit" href="https://github.com/abyssalsoldier/technician-toolkit/releases/latest/download/client-kit.zip">Download client kit <span class="size"></span></a>
+    </div>
+  </div>
+
+  <section class="notes">
+    <h3>Windows SmartScreen</h3>
+    <p>The exe isn't code-signed yet, so Windows may show "Windows protected your PC". Click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+    <h3>Requirements</h3>
+    <p>Windows 10 or 11 with Windows PowerShell 5.1 (built in). Run as administrator.</p>
+    <h3>Older versions</h3>
+    <p>Every version is on the <a href="https://github.com/abyssalsoldier/technician-toolkit/releases">releases page</a>.</p>
+  </section>
+
+  <footer>Downloads come from the toolkit's GitHub releases (built from the main branch).</footer>
+</main>
+<script>
+  // Fills in the version, date, file sizes and zip checksum from the latest GitHub release.
+  // The download links work without this (they always point at the latest release).
+  (function () {
+    var repo = 'abyssalsoldier/technician-toolkit';
+    function mb(bytes) { return '(' + (bytes / 1048576).toFixed(1) + ' MB)'; }
+    fetch('https://api.github.com/repos/' + repo + '/releases/latest')
+      .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+      .then(function (rel) {
+        var date = new Date(rel.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+        document.getElementById('release').textContent = 'Latest release: ' + rel.tag_name + ', ' + date;
+        var ids = { 'latest.zip': 'dl-zip', 'client-kit.zip': 'dl-kit' };
+        (rel.assets || []).forEach(function (a) {
+          var id = /\.exe$/i.test(a.name) ? 'dl-exe' : ids[a.name];
+          if (!id) { return; }
+          var link = document.getElementById(id);
+          link.href = a.browser_download_url;
+          link.querySelector('.size').textContent = mb(a.size);
+        });
+        // GitHub reports each asset's SHA-256 (the same value as latest.sha256)
+        var zip = (rel.assets || []).filter(function (a) { return a.name === 'latest.zip'; })[0];
+        if (zip && zip.digest) { document.getElementById('sha').textContent = zip.digest.replace(/^sha256:/, ''); }
+      })
+      .catch(function () { /* offline or rate-limited: keep the default text and links */ });
+  })();
+</script>
+</body>
+</html>

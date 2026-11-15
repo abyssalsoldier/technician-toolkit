@@ -27,7 +27,7 @@ GitHub-based client repos (core as an `upstream` remote) remain supported. What 
 *   **Core integrity:** `dependencies/core-manifest.json` checksums every core file. Client builds are refused when core was modified. Core maintainers regenerate it with `.\build.ps1 -UpdateCoreManifest`, and CI fails when it's stale.
 *   **Modules & installers:** `client/Modules/` (same `Register-<Name>` contract; a matching `Name` replaces a core module) and `client/CustomInstallers/`.
 *   **Versioning & releases:** `client/version.txt` drives the client's own GitHub Releases and USB self-update. A client USB refuses any update that would remove `client/`.
-*   **Updating core:** `git fetch upstream && git merge upstream/master`. It merges cleanly because core never touches `client/`. `tools/Test-ClientOverlay.ps1 -CheckCore` validates the overlay and fails if any core file was edited.
+*   **Updating core:** `git fetch upstream && git merge upstream/main`. It merges cleanly because core never touches `client/`. `tools/Test-ClientOverlay.ps1 -CheckCore` validates the overlay and fails if any core file was edited.
 *   **Same runtime:** `client/` is read at launch from the toolkit folder, so `Launch.bat`, USB, SFX, the locked exe and ConnectWise Toolbox all behave the same. With no `client/`, the toolkit is the plain core.
 
 Setup and rules: [CLIENT_GUIDE.md](CLIENT_GUIDE.md). Instructions for AI agents: [AGENTS.md](AGENTS.md). Template: [client.example/](client.example/).
@@ -55,13 +55,14 @@ When `Launch.bat` is started from a USB drive, the toolkit first checks for upda
 
 ### Self-Update from GitHub Releases
 USB toolkits update themselves from this repository's [GitHub Releases](https://github.com/abyssalsoldier/technician-toolkit/releases).
-*   **Publishing:** `.github/workflows/release.yml` runs on every push to `master`. If no release exists yet for the version in `dependencies/version.txt` (or `client/version.txt` in a client repo), it builds a clean `latest.zip`, computes `latest.sha256`, and publishes release `vX.Y.Z` with `latest.zip`, `latest.sha256`, and `version.txt` attached. Pushes that don't bump the version publish nothing.
+*   **Publishing:** `.github/workflows/release.yml` runs on every push to `main` (the release branch; day-to-day work is on `dev`). If no release exists yet for the version in `dependencies/version.txt` (or `client/version.txt` in a client repo), it builds a clean `latest.zip`, computes `latest.sha256`, and publishes release `vX.Y.Z` with `latest.zip`, `latest.sha256`, `version.txt` and (core) `client-kit.zip` attached. A Windows job then builds the ready-to-run exe and attaches it. Pushes that don't bump the version publish nothing.
 *   **Checking:** On launch from a USB, the toolkit reads `releases/latest/download/version.txt` from this repo, or from the client's `UpdateBaseUrl` in a client build. Only a *newer* version triggers an update prompt (a message box, since the console is hidden).
 *   **Integrity:** The downloaded zip must match `latest.sha256` or the update is aborted. A missing or malformed checksum also aborts.
 *   **Deploying:** The release is mirrored onto the USB (files removed from the release are removed from the stick). Technician-added files in `CustomInstallers/` are kept, and the toolkit relaunches at the new version.
 *   **Locked USBs don't self-update:** their vault pins every kit file, so an update would make them refuse to unlock. Re-create them from the new version.
 *   **Authenticity:** the checksum comes from the same release as the zip, so it proves the download is complete, not who published it. Protect the GitHub account (2FA) that publishes releases.
-*   **To ship a release:** bump `dependencies/version.txt`, commit, and push to `master`.
+*   **To ship a release:** bump `dependencies/version.txt` on `dev`, merge `dev` into `main`, and push `main`.
+*   **Download site:** `website/index.html` is a static page that always links to the latest release (see `website/README.md`).
 
 ### Temporary Execution & Cleanup
 1.  **Extraction:** The SFX extracts to `%TEMP%\EndpointToolkit_SC`, and USB launches run from a randomized local copy in `%TEMP%`.
