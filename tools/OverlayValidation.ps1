@@ -129,7 +129,7 @@ function Test-OvBranding {
     if (-not (Test-Path $path)) { return @{ Errors = @('client\branding.json is missing.'); Warnings = @(); Infos = @(); Branding = $null } }
     try { $b = Get-Content $path -Raw | ConvertFrom-Json } catch { return @{ Errors = @("client\branding.json is not valid JSON: $($_.Exception.Message)"); Warnings = @(); Infos = @(); Branding = $null } }
 
-    $known = 'ProductName', 'AccentColor', 'Logo', 'SupportContact', 'UpdateSource', 'UpdateBaseUrl', 'DisabledModules', 'LockedModules', 'ExeName'
+    $known = 'ProductName', 'AccentColor', 'Logo', 'SupportContact', 'CompanyName', 'UpdateSource', 'UpdateBaseUrl', 'DisabledModules', 'LockedModules', 'ExeName'
     foreach ($prop in $b.PSObject.Properties.Name) {
         if ($known -notcontains $prop -and $prop -notlike '_*') { $warnings += "Unknown key '$prop' (ignored). Known keys: $($known -join ', ')" }
     }

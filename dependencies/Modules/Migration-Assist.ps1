@@ -611,20 +611,25 @@ function Import-MaNetworkDrives {
 # ---------------------------------------------------------------------------
 
 function Export-MaWifiNetwork {
-    param([string]$Bundle, [string]$SecretsDir, [System.Collections.ArrayList]$Results)
+    param([string]$Bundle, [string]$SecretsDir, [System.Collections.ArrayList]$Results, [bool]$IncludeWifiProfiles = $true)
     $cat = 'WifiNetwork'
     $dir = Join-Path $Bundle 'WifiNetwork'
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
 
-    # Wi-Fi profiles with keys in clear text -> encrypted secrets only
-    $wifiDir = Join-Path $SecretsDir 'Wifi'
-    New-Item -ItemType Directory -Path $wifiDir -Force | Out-Null
-    $out = (& netsh.exe wlan export profile key=clear folder="$wifiDir" 2>&1) | Out-String
-    $files = @(Get-ChildItem $wifiDir -Filter '*.xml' -ErrorAction SilentlyContinue)
-    if ($files.Count -gt 0) {
-        foreach ($f in $files) { Add-MaResult $Results $cat ("Wi-Fi: " + $f.BaseName) 'OK' 'Exported (key stored encrypted).' }
+    # Wi-Fi profiles with keys in clear text -> encrypted secrets only. Opt-in in the UI: 'netsh wlan export
+    # profile key=clear' is a known credential-access pattern for EDR products.
+    if ($IncludeWifiProfiles) {
+        $wifiDir = Join-Path $SecretsDir 'Wifi'
+        New-Item -ItemType Directory -Path $wifiDir -Force | Out-Null
+        $out = (& netsh.exe wlan export profile key=clear folder="$wifiDir" 2>&1) | Out-String
+        $files = @(Get-ChildItem $wifiDir -Filter '*.xml' -ErrorAction SilentlyContinue)
+        if ($files.Count -gt 0) {
+            foreach ($f in $files) { Add-MaResult $Results $cat ("Wi-Fi: " + $f.BaseName) 'OK' 'Exported (key stored encrypted).' }
+        } else {
+            Add-MaResult $Results $cat 'Wi-Fi profiles' 'Skipped' 'None found (or no WLAN service).'
+        }
     } else {
-        Add-MaResult $Results $cat 'Wi-Fi profiles' 'Skipped' 'None found (or no WLAN service).'
+        Add-MaResult $Results $cat 'Wi-Fi profiles' 'Skipped' 'Not selected (Include Wi-Fi profiles and saved passwords).'
     }
 
     # Static IP configuration
@@ -1112,7 +1117,8 @@ function Invoke-MigrationExport {
         [Parameter(Mandatory)][string]$Destination,
         [string[]]$Categories = @('Printers', 'NetworkDrives', 'WifiNetwork', 'SystemSettings'),
         [string]$Passphrase,
-        [bool]$IncludeDriverPackages = $true
+        [bool]$IncludeDriverPackages = $true,
+        [bool]$IncludeWifiProfiles = $true
     )
     Assert-MaAdmin
     # secrets.enc (Wi-Fi keys, drive credentials) travels on USB sticks and shares: guessable offline
@@ -1134,7 +1140,7 @@ function Invoke-MigrationExport {
                 switch ($c) {
                     'Printers'       { Export-MaPrinters -Bundle $bundle -Results $results -IncludeDriverPackages $IncludeDriverPackages }
                     'NetworkDrives'  { Export-MaNetworkDrives -Bundle $bundle -SecretsDir $secrets -Results $results }
-                    'WifiNetwork'    { Export-MaWifiNetwork -Bundle $bundle -SecretsDir $secrets -Results $results }
+                    'WifiNetwork'    { Export-MaWifiNetwork -Bundle $bundle -SecretsDir $secrets -Results $results -IncludeWifiProfiles $IncludeWifiProfiles }
                     'SystemSettings' { Export-MaSystemSettings -Bundle $bundle -Results $results }
                 }
             } catch {
@@ -1336,9 +1342,12 @@ function Get-MigrationAssistUI {
     $expDrivers = New-MaCheck 'Include printer driver packages' $true $text
     $expDrivers.Margin = [System.Windows.Thickness]::new(20, 0, 0, 4)
     $expDrives = New-MaCheck 'Network drives and saved credential names' $true $text
-    $expWifi = New-MaCheck 'Wi-Fi profiles, static IP, proxy, hosts file, VPN' $true $text
+    $expWifi = New-MaCheck 'Network settings (static IP, proxy, hosts file, VPN)' $true $text
+    # Off by default: exporting saved Wi-Fi passwords ('netsh wlan export profile key=clear') is a pattern EDR products flag
+    $expWifiKeys = New-MaCheck 'Include Wi-Fi profiles and saved Wi-Fi passwords' $false $text
+    $expWifiKeys.Margin = [System.Windows.Thickness]::new(20, 0, 0, 4)
     $expSys = New-MaCheck 'System settings (software list, env vars, default apps, tasks, certs, region)' $true $text
-    foreach ($c in $expPrinters, $expDrivers, $expDrives, $expWifi, $expSys) { $panel.Children.Add($c) | Out-Null }
+    foreach ($c in $expPrinters, $expDrivers, $expDrives, $expWifi, $expWifiKeys, $expSys) { $panel.Children.Add($c) | Out-Null }
 
     $panel.Children.Add((New-MaText 'Save bundle to:' 12 $dim $false ([System.Windows.Thickness]::new(0, 8, 0, 4)))) | Out-Null
     $expPath = New-MaPathRow $text $inputBg $inputBorder
@@ -1495,6 +1504,7 @@ function Get-MigrationAssistUI {
             Categories            = $cats
             Passphrase            = $expPass.Password
             IncludeDriverPackages = [bool]$expDrivers.IsChecked
+            IncludeWifiProfiles   = [bool]$expWifiKeys.IsChecked
         }
         & $h.Launch 'Export' $params
     }.GetNewClosure())

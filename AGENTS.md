@@ -1,4 +1,4 @@
-# Agent Instructions: Endpoint Toolkit
+# Agent Instructions: Technician Toolkit
 
 PowerShell 5.1+ / WPF endpoint toolkit for MSP technicians. It runs from `Launch.bat`, a USB stick, a self-extracting exe, or a **ConnectWise Control Toolbox** upload, sometimes as SYSTEM. The human-facing version of these rules is [CLIENT_GUIDE.md](CLIENT_GUIDE.md).
 
@@ -23,7 +23,7 @@ If it's unclear, ask the user before editing anything.
 - Core files are checksummed in `dependencies/core-manifest.json`. `build.ps1`, `Export-LockedToolkit.ps1`, the wizard and CI **refuse to build** a client toolkit when any core file differs. Never edit or regenerate that manifest in a client repo, and never pass `-AllowModifiedCore` (core maintainers only).
 - The Client Setup wizard (`Setup-Client.bat`) is the normal way for humans to change `client/`. Agents may edit `client/` files directly, but must keep `branding.json` valid for the wizard (known keys only; `_`-prefixed keys are comments).
 - Override core behavior only through the supported mechanisms:
-  - `client/branding.json`: ProductName, AccentColor, Logo, SupportContact, UpdateSource (`core`/`custom`/`none`), UpdateBaseUrl, DisabledModules, LockedModules (`["*"]` = all), ExeName
+  - `client/branding.json`: ProductName, AccentColor, Logo, SupportContact, CompanyName, UpdateSource (`core`/`custom`/`none`), UpdateBaseUrl, DisabledModules, LockedModules (`["*"]` = all), ExeName
   - a client module whose `Name` equals a core module `Name` replaces that module
   - a client function with the same name as a core function replaces it (last resort, tell the user; it can break on core updates)
 

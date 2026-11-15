@@ -1,6 +1,6 @@
 # Client Guide: Your Own Branded Toolkit
 
-This guide is for IT teams who run the Endpoint Toolkit under their own name, with their own colors, modules and installers. **You don't need GitHub or Git.** Everything is done with a setup wizard. GitHub is optional, for teams that want version control and their own update feed. If you use an AI coding agent, point it at [AGENTS.md](AGENTS.md).
+This guide is for IT teams who run the Technician Toolkit under their own name, with their own colors, modules and installers. **You don't need GitHub or Git.** Everything is done with a setup wizard. GitHub is optional, for teams that want version control and their own update feed. If you use an AI coding agent, point it at [AGENTS.md](AGENTS.md).
 
 ---
 
@@ -178,10 +178,11 @@ The wizard writes this file for you. These are the keys if you edit it by hand:
 
 | Key | Meaning | Default |
 |---|---|---|
-| `ProductName` | Window title, header, console title, session report, SFX dialog | `Endpoint Toolkit` |
+| `ProductName` | Window title, header, console title, session report, SFX dialog | `Technician Toolkit` |
 | `AccentColor` | Highlight color, `#RRGGBB` | `#89B4FA` |
 | `Logo` | Image path relative to `client\`, PNG ≤ 256 KB, shown about 28 px tall | none |
 | `SupportContact` | Shown in the log and Session Report | none |
+| `CompanyName` | Company shown in the locked exe's file properties (and EDR consoles) | your `ProductName` |
 | `UpdateSource` | `core` / `custom` / `none` (see above) | `custom` if `UpdateBaseUrl` is set, else `none` |
 | `UpdateBaseUrl` | Your feed for `UpdateSource: custom` | none |
 | `DisabledModules` | Module `Name`s to hide | `[]` |
@@ -254,6 +255,13 @@ Then in the repo's **Settings → Actions → General**, tick **Allow GitHub Act
 
 ## Changelog
 
+### Core 2.2.4
+- Changed: the product is now called **Technician Toolkit** (window title, header, wizard default, release titles, docs). Exe names (`EndpointToolkit.exe`, `EndpointToolkit_Locked.exe`) and temp folders are unchanged, so ConnectWise Toolbox entries keep working. Client toolkits that set their own `ProductName` see no change.
+- Changed: no PowerShell or console window appears when starting from `Launch.bat` or either exe, and startup is faster. The toolkit no longer compiles code at startup to hide its console (also an antivirus/EDR trigger). **Rebuild your exes.**
+- New: the locked exe has version information (product, company, version) in its file properties. Set the company with the new optional `CompanyName` key in `branding.json` (wizard: Branding page); when empty, your `ProductName` is used.
+- Changed: Storage Management compiles its fast disk scanner only when a fast scan starts, not at every launch.
+- Changed: the network scanner no longer starts a separate process per address (one `arp -a` read after the scan, and `nbtstat` without an extra PowerShell). Results are the same; hosts that only answer ARP are listed at the end.
+- Changed: Migration Assist splits Wi-Fi from the other network settings. **Include Wi-Fi profiles and saved Wi-Fi passwords** is now off by default; tick it to migrate Wi-Fi.
 ### Core 2.2.3 (security fixes)
 - Fixed: under ConnectWise / SYSTEM, another user of the PC could race the exe while it prepared `C:\Windows\Temp\EndpointToolkit_SC`. The exe now extracts into a new folder that is private from the moment it exists, then renames it. **Rebuild your exes and replace them in ConnectWise Toolbox.**
 - Fixed: cleanup (closing the toolkit, the exe's temp folder, **Clear Temp Files**) no longer follows junctions or symbolic links another user planted in a temp folder. Before, this could delete files elsewhere with the toolkit's rights.

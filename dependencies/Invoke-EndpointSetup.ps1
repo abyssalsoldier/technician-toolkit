@@ -1,5 +1,5 @@
 # Invoke-EndpointSetup.ps1
-# Endpoint Toolkit v2 — WPF GUI orchestrator (core; client branding/modules come from client\, see ClientOverlay.ps1)
+# Technician Toolkit v2 — WPF GUI orchestrator (core; client branding/modules come from client\, see ClientOverlay.ps1)
 # Run as Administrator
 
 param(
@@ -42,22 +42,14 @@ $script:Toolkit = @{
     Session       = $null
 }
 
-# Hide the console window
-$win32Signature = @'
-[DllImport("user32.dll")]
-public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-[DllImport("kernel32.dll")]
-public static extern IntPtr GetConsoleWindow();
-'@
-$win32Api = Add-Type -MemberDefinition $win32Signature -Name 'Win32Console' -Namespace 'Win32' -PassThru
-$win32Api::ShowWindow($win32Api::GetConsoleWindow(), 0) | Out-Null
-
+# The console window is hidden by whoever starts this script (Launch.bat, the elevation relaunch above,
+# the exe launchers and the self-update all start PowerShell with a hidden window). No runtime P/Invoke
+# here: Add-Type compiles C# (csc.exe) at every launch, which is slow and is an EDR signal.
+# The execution policy comes from the same launchers (-ExecutionPolicy Bypass for this process).
 
 if (-not $script:Toolkit.Version) { $script:Toolkit.Version = "0.0.0" }
 
 $script:ToolkitKey = $null
-
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
 # --- Load Core modules ---
 $corePath = "$PSScriptRoot\Core"

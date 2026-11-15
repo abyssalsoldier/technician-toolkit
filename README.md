@@ -1,4 +1,4 @@
-# Endpoint Toolkit Architecture
+# Technician Toolkit Architecture
 
 A powerful, PowerShell-based endpoint onboarding and automation toolkit designed for managed service providers (MSPs). This document outlines the technical architecture, security mechanisms, and extensibility of the toolkit. For step-by-step instructions on *using* the toolkit, please see the [User Guide](UserGuide.md).
 

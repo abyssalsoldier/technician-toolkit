@@ -1,6 +1,6 @@
-# Endpoint Toolkit - Technician Manual
+# Technician Toolkit - Technician Manual
 
-Welcome to the Endpoint Toolkit. This manual provides step-by-step instructions for technicians to efficiently set up, configure, and onboard Windows client workstations.
+Welcome to the Technician Toolkit. This manual provides step-by-step instructions for technicians to efficiently set up, configure, and onboard Windows client workstations.
 
 ## 🚀 Getting Started
 

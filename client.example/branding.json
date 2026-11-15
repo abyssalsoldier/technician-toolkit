@@ -1,9 +1,10 @@
 {
   "_readme": "Easiest: run Setup-Client.bat (the wizard). By hand: copy client.example to client, then edit. Keys starting with _ are ignored. See CLIENT_GUIDE.md.",
-  "ProductName": "Acme Endpoint Toolkit",
+  "ProductName": "Acme Technician Toolkit",
   "AccentColor": "#F38BA8",
   "Logo": "",
   "SupportContact": "helpdesk@acme.example / 555-0100",
+  "CompanyName": "Acme IT Services",
   "UpdateSource": "core",
   "UpdateBaseUrl": "",
   "DisabledModules": [],

@@ -18,7 +18,8 @@
 function Get-ToolkitCoreDefaults {
     # Core branding. A plain core toolkit (no client\ folder) uses exactly these values.
     return @{
-        ProductName     = 'Endpoint Toolkit'
+        ProductName     = 'Technician Toolkit'
+        CompanyName     = 'JRankinTech'   # exe file properties (Company); client builds default to their ProductName
         AccentColor     = '#89B4FA'
         Logo            = ''
         SupportContact  = ''
@@ -102,6 +103,8 @@ function Get-ToolkitBranding {
     $coreFeed = $branding.UpdateBaseUrl
     $branding.UpdateBaseUrl = ''
     $branding.UpdateSource  = 'none'
+    # White-label: a client exe never shows the core's company; empty = their ProductName
+    $branding.CompanyName   = ''
 
     $jsonPath = Join-Path $clientRoot 'branding.json'
     if (-not (Test-Path -LiteralPath $jsonPath -PathType Leaf)) {
@@ -132,6 +135,13 @@ function Get-ToolkitBranding {
 
     $v = & $get 'SupportContact'
     if ($v -is [string]) { $branding.SupportContact = $v.Trim() }
+
+    $v = & $get 'CompanyName'
+    if ($v -is [string] -and $v.Trim()) {
+        $t = ($v.Trim() -replace '[\x00-\x1F]', '')
+        if ($t.Length -le 100) { $branding.CompanyName = $t }
+        else { & $addWarning 'branding.json CompanyName is longer than 100 characters - ignored.' }
+    }
 
     # Update feed:
     #   UpdateSource "core"   -> core release feed; the USB update keeps the local client\ folder

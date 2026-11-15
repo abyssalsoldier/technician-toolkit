@@ -30,13 +30,22 @@ function Invoke-StorageManagement {
 #
 # Add-Type itself can be blocked by policy (Constrained Language Mode,
 # AppLocker/WDAC disallowing dynamic code) on locked-down machines, so this
-# is wrapped in try/catch — $script:DsaNativeAvailable tells the rest of the
+# is wrapped in try/catch — Initialize-DsaNative tells the rest of the
 # module whether the MFT fast path can be attempted at all; when it can't,
 # every volume just uses the enumeration scanner.
+#
+# Compiled on demand, only when a scan is about to use the fast path - never
+# when the module loads. Modules are dot-sourced at every launch and in every
+# runspace, and a compile (csc.exe) plus raw-disk P/Invoke declarations at
+# every launch is slow and looks suspicious to EDR products.
 # ============================================================================
 
-$script:DsaNativeAvailable = $false
-try {
+function Initialize-DsaNative {
+    # $true when the native MFT reader is available (compiled at most once per process: the type check)
+    if ($script:DsaNativeTried) { return [bool]$script:DsaNativeAvailable }
+    $script:DsaNativeTried = $true
+    $script:DsaNativeAvailable = $false
+    try {
     if (-not ('Dsa.MftParser' -as [type])) {
         Add-Type -TypeDefinition @'
 using System;
@@ -394,9 +403,11 @@ namespace Dsa
 '@
     }
     $script:DsaNativeAvailable = $true
-} catch {
-    Write-Warning "Storage Management: native MFT reader unavailable ($($_.Exception.Message)) - drives will use the standard recursive scan instead."
-    $script:DsaNativeAvailable = $false
+    } catch {
+        Write-Warning "Storage Management: native MFT reader unavailable ($($_.Exception.Message)) - drives will use the standard recursive scan instead."
+        $script:DsaNativeAvailable = $false
+    }
+    return [bool]$script:DsaNativeAvailable
 }
 
 # ============================================================================
@@ -987,7 +998,7 @@ function Get-DsaVolumeTree {
     $format = $null
     try { $format = ([System.IO.DriveInfo]::new($rootPath)).DriveFormat } catch { }
 
-    if ($script:DsaNativeAvailable -and $format -eq 'NTFS' -and $driveLetter.Length -eq 1) {
+    if ($format -eq 'NTFS' -and $driveLetter.Length -eq 1 -and (Initialize-DsaNative)) {
         try {
             Write-Log "Attempting MFT fast scan for drive $($driveLetter):..." -Level Info
             $mftRoot = Read-DsaMftTree -DriveLetter $driveLetter -ProgressState $ProgressState -CancelFlagRef $CancelFlagRef

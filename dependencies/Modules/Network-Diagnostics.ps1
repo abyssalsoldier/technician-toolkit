@@ -12,6 +12,19 @@ function Register-NetworkDiagnostics {
     }
 }
 
+function ConvertFrom-ToolkitArpTable {
+    # 'arp -a' output -> hashtable IPv4 -> MAC (12 upper-case hex digits). Skips broadcast/empty MACs.
+    param([string]$Text)
+    $table = @{}
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -match '^\s*(\d{1,3}(?:\.\d{1,3}){3})\s+([0-9a-fA-F]{2}(?:[-:][0-9a-fA-F]{2}){5})\s') {
+            $mac = ($Matches[2] -replace '[^0-9a-fA-F]', '').ToUpper()
+            if ($mac -ne '000000000000' -and $mac -ne 'FFFFFFFFFFFF' -and -not $table.ContainsKey($Matches[1])) { $table[$Matches[1]] = $mac }
+        }
+    }
+    return $table
+}
+
 function Get-NetworkDiagnosticsUI {
     $scroll = New-Object System.Windows.Controls.ScrollViewer
     $scroll.VerticalScrollBarVisibility = 'Auto'
@@ -552,6 +565,7 @@ function Get-NetworkDiagnosticsUI {
     }
 
     # Network Scan button
+    $arpParser = ${function:ConvertFrom-ToolkitArpTable}   # captured here: the click closure can't see module functions
     $scanBtn.Add_Click({
         $rangeText = $Global:SyncHash.Scanner.IpRangeInput.Text.Trim()
         $ipsToScan = [System.Collections.ArrayList]::new()
@@ -629,12 +643,14 @@ function Get-NetworkDiagnosticsUI {
         $rs.Open()
         $rs.SessionStateProxy.SetVariable('SyncHash', $Global:SyncHash)
         $rs.SessionStateProxy.SetVariable('MacVendors', $macVendors)
+        $rs.SessionStateProxy.SetVariable('ArpParser', $arpParser)
 
         $ps = [powershell]::Create()
         $ps.Runspace = $rs
         $ps.AddScript({
             $ipsToScan = $SyncHash.Scanner.IpsToScan
             $macVendors = $MacVendors
+            Set-Item -Path function:ConvertFrom-ToolkitArpTable -Value $ArpParser
             $workerScript = {
                 param($ip, $localMacVendors)
 
@@ -651,23 +667,8 @@ function Get-NetworkDiagnosticsUI {
                     } | Select-Object -First 1
 
                     $arpAlive = $null -ne $validNeighbor -and $validNeighbor.State -match 'Reachable|Stale|Delay|Probe|Permanent'
-
-                    # Fallback: Parse `arp -a` in case Get-NetNeighbor misses it on certain network interfaces
-                    $legacyMac = ''
-                    if (-not $arpAlive -and $reply.Status -ne 'Success') {
-                        $arpOut = arp -a $ip 2>$null
-                        if ($arpOut) {
-                            $match = $arpOut | Select-String -Pattern "^\s*$([regex]::Escape($ip))\s+([0-9a-fA-F\-]{17})\s+"
-                            if ($match) {
-                                $macFound = $match.Matches[0].Groups[2].Value
-                                $c = $macFound -replace '[^a-fA-F0-9]', ''
-                                if ($c.Length -eq 12 -and $c -ne '000000000000' -and $c -ne 'FFFFFFFFFFFF') {
-                                    $legacyMac = $c.ToUpper()
-                                    $arpAlive = $true
-                                }
-                            }
-                        }
-                    }
+                    # Hosts Get-NetNeighbor misses are picked up from ONE 'arp -a' after the sweep (see below),
+                    # not one arp.exe per address: a burst of hundreds of child processes looks like an attack to EDR.
 
                     if ($reply.Status -eq 'Success' -or $arpAlive) {
                         # 1. Get Hostname (try .NET DNS, fallback to timed NetBIOS query)
@@ -675,40 +676,37 @@ function Get-NetworkDiagnosticsUI {
                         try { $hostname = ([System.Net.Dns]::GetHostEntry($ip).HostName).Split('.')[0] } catch {}
 
                         if ([string]::IsNullOrEmpty($hostname) -or $hostname -eq $ip) {
+                            # nbtstat can hang: run it directly with a 3 s timeout (no Start-Job, which would start
+                            # an extra powershell.exe per host)
+                            $nbProc = $null
                             try {
-                                # nbtstat can hang, so run it in a job with a timeout
-                                $job = Start-Job -ScriptBlock { param($targetIp) nbtstat -A $targetIp } -ArgumentList $ip
-                                if (Wait-Job $job -Timeout 3) {
-                                    $nbtstatResult = Receive-Job $job
-                                    $nameLine = $nbtstatResult | Select-String -Pattern '\s+<00>\s+UNIQUE\s+Registered' -List | Select-Object -First 1
+                                $nbPsi = New-Object System.Diagnostics.ProcessStartInfo('nbtstat.exe', "-A $ip")
+                                $nbPsi.UseShellExecute = $false
+                                $nbPsi.RedirectStandardOutput = $true
+                                $nbPsi.CreateNoWindow = $true
+                                $nbProc = [System.Diagnostics.Process]::Start($nbPsi)
+                                $nbRead = $nbProc.StandardOutput.ReadToEndAsync()
+                                if ($nbProc.WaitForExit(3000) -and $nbRead.Wait(1000)) {
+                                    $nameLine = ($nbRead.Result -split "`r?`n") | Select-String -Pattern '\s+<00>\s+UNIQUE\s+Registered' -List | Select-Object -First 1
                                     if ($nameLine) { $hostname = ($nameLine.Line.Trim() -split '\s+')[0] }
+                                } else {
+                                    try { $nbProc.Kill() } catch {}
                                 }
-                                Remove-Job $job -Force
                             } catch {}
+                            finally { if ($nbProc) { $nbProc.Dispose() } }
                         }
 
-                        # 2. Get MAC and Vendor
+                        # 2. Get MAC and Vendor (MACs still missing are filled from the arp table after the sweep)
                         $mac = ''
                         if ($validNeighbor) {
                             $mac = ($validNeighbor.LinkLayerAddress -replace '[^a-fA-F0-9]', '').ToUpper()
-                        } elseif ($legacyMac) {
-                            $mac = $legacyMac
                         } elseif ($reply.Status -eq 'Success') {
                             try {
                                 $n2 = Get-NetNeighbor -IPAddress $ip -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {
                                     $c = $_.LinkLayerAddress -replace '[^a-fA-F0-9]', ''
                                     $c.Length -eq 12 -and $c -ne '000000000000' -and $c -ne 'FFFFFFFFFFFF'
                                 } | Select-Object -First 1
-                                if ($n2) {
-                                    $mac = ($n2.LinkLayerAddress -replace '[^a-fA-F0-9]', '').ToUpper()
-                                } else {
-                                    $arpOut2 = arp -a $ip 2>$null
-                                    $match2 = $arpOut2 | Select-String -Pattern "^\s*$([regex]::Escape($ip))\s+([0-9a-fA-F\-]{17})\s+"
-                                    if ($match2) {
-                                        $c2 = $match2.Matches[0].Groups[2].Value -replace '[^a-fA-F0-9]', ''
-                                        if ($c2.Length -eq 12 -and $c2 -ne '000000000000' -and $c2 -ne 'FFFFFFFFFFFF') { $mac = $c2.ToUpper() }
-                                    }
-                                }
+                                if ($n2) { $mac = ($n2.LinkLayerAddress -replace '[^a-fA-F0-9]', '').ToUpper() }
                             } catch {}
                         }
 
@@ -749,6 +747,7 @@ function Get-NetworkDiagnosticsUI {
             $total = $tasks.Count
             $completed = 0
             $found = 0
+            $byIp = @{}   # IPAddress -> result row (for the arp pass after the sweep)
 
             while ($tasks.Count -gt 0) {
                 $i = $tasks.Count - 1
@@ -761,6 +760,7 @@ function Get-NetworkDiagnosticsUI {
                             if ($results) {
                                 foreach ($res in $results) {
                                     $found++
+                                    $byIp[$res.IPAddress] = $res
                                     $SyncHash.Window.Dispatcher.Invoke([action]{
                                         $SyncHash.Scanner.ResultsView.Items.Add($res) | Out-Null
                                     })
@@ -785,6 +785,32 @@ function Get-NetworkDiagnosticsUI {
 
             $pool.Close()
             $pool.Dispose()
+
+            # One arp table read for the whole scan: fills MACs Get-NetNeighbor missed and adds hosts that
+            # only answered ARP (e.g. firewalled against ping). The sweep has just populated the table.
+            try {
+                $arpTable = ConvertFrom-ToolkitArpTable -Text ((& arp.exe -a 2>$null) -join "`n")
+                $scanSet = @{}; foreach ($a in $ipsToScan) { $scanSet[$a] = $true }
+                $changed = $false
+                foreach ($arpIp in $arpTable.Keys) {
+                    if (-not $scanSet.ContainsKey($arpIp)) { continue }
+                    $arpMac = $arpTable[$arpIp]
+                    $arpVendor = '<unknown>'
+                    if ($macVendors -and $macVendors[$arpMac.Substring(0, 6)]) { $arpVendor = $macVendors[$arpMac.Substring(0, 6)] }
+                    $row = $byIp[$arpIp]
+                    if ($row) {
+                        if ($row.MACAddress -eq '<unknown>') { $row.MACAddress = $arpMac; $row.Vendor = $arpVendor; $changed = $true }
+                    } else {
+                        $arpHost = '<unknown>'
+                        try { $h = ([System.Net.Dns]::GetHostEntry($arpIp).HostName).Split('.')[0]; if ($h -and $h -ne $arpIp) { $arpHost = $h } } catch {}
+                        $newRow = [PSCustomObject]@{ Status = 'ARP'; IPAddress = $arpIp; Hostname = $arpHost; MACAddress = $arpMac; Vendor = $arpVendor; ResponseTime = '-' }
+                        $byIp[$arpIp] = $newRow
+                        $found++
+                        $SyncHash.Window.Dispatcher.Invoke([action]{ $SyncHash.Scanner.ResultsView.Items.Add($newRow) | Out-Null })
+                    }
+                }
+                if ($changed) { $SyncHash.Window.Dispatcher.Invoke([action]{ $SyncHash.Scanner.ResultsView.Items.Refresh() }) }
+            } catch {}
 
             $SyncHash.Window.Dispatcher.Invoke([action]{
                 $SyncHash.Scanner.StatusText.Text = "Scan complete. Found $found devices."

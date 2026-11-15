@@ -66,7 +66,7 @@ function Read-ClientVersion {
 # ---------------------------------------------------------------- state
 function Get-WizardState {
     $s = @{
-        ProductName = ''; AccentColor = '#89B4FA'; Logo = ''; SupportContact = ''
+        ProductName = ''; AccentColor = '#89B4FA'; Logo = ''; SupportContact = ''; CompanyName = ''
         UpdateSource = 'core'; UpdateBaseUrl = ''; ExeName = ''
         Disabled = [System.Collections.Generic.HashSet[string]]::new()
         Locked = [System.Collections.Generic.HashSet[string]]::new()
@@ -85,6 +85,7 @@ function Get-WizardState {
                     'AccentColor'     { if ("$($p.Value)" -match '^#[0-9A-Fa-f]{6}$') { $s.AccentColor = "$($p.Value)".ToUpper() } }
                     'Logo'            { $s.Logo = "$($p.Value)" }
                     'SupportContact'  { $s.SupportContact = "$($p.Value)" }
+                    'CompanyName'     { $s.CompanyName = "$($p.Value)" }
                     'UpdateSource'    { $s.UpdateSource = "$($p.Value)".ToLower() }
                     'UpdateBaseUrl'   { $s.UpdateBaseUrl = "$($p.Value)" }
                     'ExeName'         { $s.ExeName = "$($p.Value)" }
@@ -107,6 +108,7 @@ function Save-WizardState {
     $accent = $c.txtAccent.Text.Trim()
     if ($accent -match '^#[0-9A-Fa-f]{6}$') { $state.AccentColor = $accent.ToUpper() }
     $state.SupportContact = $c.txtSupport.Text.Trim()
+    $state.CompanyName = $c.txtCompany.Text.Trim()
     $v = $null
     if ([version]::TryParse($c.txtVersion.Text.Trim(), [ref]$v)) { $state.Version = $c.txtVersion.Text.Trim() }
     else { Show-Msg "'$($c.txtVersion.Text)' is not a version like 1.0.0 - keeping $($state.Version)." 'OK' 'Warning' | Out-Null; $c.txtVersion.Text = $state.Version }
@@ -121,6 +123,7 @@ function Save-WizardState {
     $out.AccentColor = $state.AccentColor
     $out.Logo = $state.Logo
     $out.SupportContact = $state.SupportContact
+    $out.CompanyName = $state.CompanyName
     $out.UpdateSource = $state.UpdateSource
     $out.UpdateBaseUrl = if ($state.UpdateSource -eq 'custom') { $state.UpdateBaseUrl } else { '' }
     # @(...) around the whole expression: an if/else returning an empty array would collapse to $null
@@ -143,7 +146,7 @@ function Set-Status { param([string]$Text) $script:ui.txtStatus.Text = $Text }
 $win = [System.Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlTextReader (Join-Path $PSScriptRoot 'ClientSetup.xaml')))
 $ui = @{}
 foreach ($n in 'txtCoreInfo', 'lstSteps', 'txtWelcome', 'bdrIntegrity', 'txtIntegrityTitle', 'txtIntegrityDetail', 'btnImport', 'btnOpenGuide',
-               'imgPreviewLogo', 'txtPreviewName', 'txtPreviewVersion', 'txtProductName', 'txtAccent', 'pnlSwatches', 'btnLogo', 'btnLogoRemove', 'txtLogoInfo', 'txtSupport', 'txtVersion',
+               'imgPreviewLogo', 'txtPreviewName', 'txtPreviewVersion', 'txtProductName', 'txtAccent', 'pnlSwatches', 'btnLogo', 'btnLogoRemove', 'txtLogoInfo', 'txtSupport', 'txtCompany', 'txtVersion',
                'btnAddModule', 'btnLockAll', 'btnUnlockAll', 'btnModuleGuide', 'txtNewModule', 'btnNewModule', 'pnlModules',
                'txtSecretName', 'btnAddSecret', 'btnImportSecrets', 'txtSecretInfo', 'pnlSecrets', 'chkExportSecrets',
                'btnAddInstaller', 'txtInstallerTotal', 'pnlInstallers',
@@ -278,7 +281,7 @@ $ui.btnImport.Add_Click({
 
 # ---------------------------------------------------------------- 2 brand
 function Update-Preview {
-    $name = $ui.txtProductName.Text.Trim(); if (-not $name) { $name = 'Endpoint Toolkit' }
+    $name = $ui.txtProductName.Text.Trim(); if (-not $name) { $name = 'Technician Toolkit' }
     $ui.txtPreviewName.Text = $name
     $hex = $ui.txtAccent.Text.Trim()
     if ($hex -match '^#[0-9A-Fa-f]{6}$') { $ui.txtPreviewName.Foreground = New-Brush $hex; $ui.txtAccent.BorderBrush = New-Brush '#FF4D4D6C' }
@@ -467,7 +470,7 @@ function New-ModuleGuideText {
     # brief for an AI coding agent that has never seen the toolkit.
     $template = Join-Path $PSScriptRoot 'module-guide.template.md'
     if (-not (Test-Path $template)) { throw 'module-guide.template.md is missing from tools\ClientSetup.' }
-    $product = $ui.txtProductName.Text.Trim(); if (-not $product) { $product = 'Endpoint Toolkit' }
+    $product = $ui.txtProductName.Text.Trim(); if (-not $product) { $product = 'Technician Toolkit' }
     $prefix = (($product -split '\s+') | Where-Object { $_ -match '[A-Za-z]' } | Select-Object -First 1) -replace '[^A-Za-z0-9]', ''
     if (-not $prefix -or $prefix -eq 'Endpoint') { $prefix = 'Client' }
     if ($prefix -match '^[0-9]') { $prefix = "C$prefix" }
@@ -927,6 +930,7 @@ function Initialize-Controls {
     $ui.txtProductName.Text = $state.ProductName
     $ui.txtAccent.Text = $state.AccentColor
     $ui.txtSupport.Text = $state.SupportContact
+    $ui.txtCompany.Text = $state.CompanyName
     $ui.txtVersion.Text = $state.Version
     $ui.txtFeedUrl.Text = $state.UpdateBaseUrl
     switch ($state.UpdateSource) { 'custom' { $ui.rbCustom.IsChecked = $true } 'none' { $ui.rbNone.IsChecked = $true } default { $ui.rbCore.IsChecked = $true } }

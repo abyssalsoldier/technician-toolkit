@@ -47,13 +47,13 @@ jobs:
             echo "::error::Version '$VERSION' is not a version number (e.g. 1.2.3)."
             exit 1
           fi
-          NAME="Endpoint Toolkit"
+          NAME="Technician Toolkit"
           if [ -f client/branding.json ]; then
-            NAME=$(jq -r '.ProductName // "Endpoint Toolkit"' client/branding.json)
+            NAME=$(jq -r '.ProductName // "Technician Toolkit"' client/branding.json)
           fi
           # One line, no control characters (a newline would inject extra step outputs)
           NAME=$(printf '%s' "$NAME" | tr -d '[:cntrl:]' | cut -c1-100)
-          [ -n "$NAME" ] || NAME="Endpoint Toolkit"
+          [ -n "$NAME" ] || NAME="Technician Toolkit"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "Building $NAME version: $VERSION"

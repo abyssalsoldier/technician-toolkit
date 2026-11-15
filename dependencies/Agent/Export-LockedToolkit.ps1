@@ -20,6 +20,7 @@ $toolkitRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 . (Join-Path $toolkitRoot "dependencies\Core\Crypto.ps1")
 . (Join-Path $toolkitRoot "dependencies\Core\UsbDetection.ps1")
 . (Join-Path $toolkitRoot "dependencies\Core\ClientOverlay.ps1")
+. (Join-Path $toolkitRoot "dependencies\Core\SafeFileSystem.ps1")
 . (Join-Path $toolkitRoot "dependencies\Agent\CoreIntegrity.ps1")
 . (Join-Path $toolkitRoot "dependencies\Agent\LockedPayload.ps1")
 
@@ -102,18 +103,55 @@ $zipPath = Join-Path $env:TEMP "toolkit-payload-$(Get-Date -Format 'yyyyMMdd_HHm
 [System.IO.Compression.ZipFile]::CreateFromDirectory($tempStaging, $zipPath)
 
 Write-Host "Compiling SFX Executable..." -ForegroundColor Yellow
+# Version info shown in file properties and EDR consoles, from whoever builds this exe:
+# core build -> core defaults (Technician Toolkit / JRankinTech), client build -> their branding.json
+# (CompanyName, or their ProductName when it is empty). Values are admin input: escaped for C#.
+function ConvertTo-StubCSharpString {
+    param([string]$Text)
+    $t = ($Text -replace '[\x00-\x1F]', '').Replace('\', '\').Replace('"', '\"')
+    return '"' + $t + '"'
+}
+$stubProduct = if ($branding.ProductName) { $branding.ProductName } else { (Get-ToolkitCoreDefaults).ProductName }
+$stubCompany = if ($branding.CompanyName) { $branding.CompanyName } else { $stubProduct }
+$stubVersionText = (Get-ToolkitVersionInfo -Root (Join-Path $toolkitRoot 'dependencies') -Parent $toolkitRoot).Effective
+$stubVersionParts = @(([version]$stubVersionText).ToString().Split('.') | ForEach-Object { [int]$_ })
+while ($stubVersionParts.Count -lt 4) { $stubVersionParts += 0 }
+$stubVersion = ($stubVersionParts[0..3] | ForEach-Object { [Math]::Min([Math]::Max($_, 0), 65534) }) -join '.'
+$csProduct = ConvertTo-StubCSharpString $stubProduct
+$csCompany = ConvertTo-StubCSharpString $stubCompany
+$csDescription = ConvertTo-StubCSharpString "$stubProduct (locked)"
+$csVersion = ConvertTo-StubCSharpString $stubVersion
 $csharpCode = @"
 using System;
 using System.IO;
 using System.IO.Compression;
 using System.Diagnostics;
 using System.Reflection;
+using System.Windows.Forms;
+
+[assembly: AssemblyTitle($csProduct)]
+[assembly: AssemblyProduct($csProduct)]
+[assembly: AssemblyDescription($csDescription)]
+[assembly: AssemblyCompany($csCompany)]
+[assembly: AssemblyVersion($csVersion)]
+[assembly: AssemblyFileVersion($csVersion)]
+[assembly: AssemblyInformationalVersion($csVersion)]
 
 namespace EndpointToolkit
 {
     class Program
     {
-        static void Main(string[] args)
+        // A windowed (not console) app: no console window. Errors are shown in a message box when someone
+        // is at the screen; otherwise (e.g. ConnectWise backstage as SYSTEM) only the exit code reports them.
+        static int Fail(string message)
+        {
+            if (Environment.UserInteractive) {
+                try { MessageBox.Show(message, $csProduct, MessageBoxButtons.OK, MessageBoxIcon.Error); } catch { }
+            }
+            return 1;
+        }
+
+        static int Main(string[] args)
         {
             string exePath = Assembly.GetExecutingAssembly().Location;
             string tempDir = Path.Combine(Path.GetTempPath(), "EndpointToolkit_SC");
@@ -152,14 +190,9 @@ namespace EndpointToolkit
                 if (!(owner.Equals(me) || owner.Equals(system) || owner.Equals(admins))) { throw new IOException("the folder has an untrusted owner"); }
             } catch (Exception ex) {
                 try { if (Directory.Exists(staging)) { Directory.Delete(staging, true); } } catch { }
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Refusing to start: " + tempDir + " is not safe (" + ex.Message + "). Delete it as an administrator and run again.");
-                Console.ResetColor();
-                if (Environment.UserInteractive) { try { Console.ReadKey(); } catch { } }
-                return;
+                return Fail("Refusing to start: " + tempDir + " is not safe (" + ex.Message + ").\n\nDelete it as an administrator and run again.");
             }
 
-            Console.WriteLine("Extracting Secure Toolkit...");
             try {
                 // Layout: [stub exe][payload zip][8-byte zip offset][8-byte "TKSFX1" marker].
                 // .NET's ZipArchive can't read a zip that does not start at byte 0 (its offsets are
@@ -181,35 +214,33 @@ namespace EndpointToolkit
                 Directory.Move(staging, tempDir);
             } catch (Exception ex) {
                 try { if (Directory.Exists(staging)) { Directory.Delete(staging, true); } } catch { }
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Extraction failed: " + ex.Message);
-                Console.ResetColor();
-                if (Environment.UserInteractive) { try { Console.ReadKey(); } catch { } }
-                return;
+                return Fail("Extraction failed: " + ex.Message);
             }
 
+            // PowerShell starts with a hidden window, so no console shows behind the toolkit's own window
             string setupScript = Path.Combine(tempDir, @"dependencies\Invoke-EndpointSetup.ps1");
             ProcessStartInfo psi = new ProcessStartInfo {
                 FileName = "powershell.exe",
-                Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + setupScript + "\"",
+                Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + setupScript + "\"",
                 UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
                 Verb = "RunAs"
             };
             try {
                 Process.Start(psi);
             } catch (Exception ex) {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Launch failed: " + ex.Message);
-                Console.ResetColor();
-                Console.ReadKey();
+                return Fail("Launch failed: " + ex.Message);
             }
+            return 0;
         }
     }
 }
 "@
 
-$stubPath = Join-Path $env:TEMP "ToolkitStub-$(Get-Date -Format 'yyyyMMdd_HHmmss').exe"
-Add-Type -TypeDefinition $csharpCode -ReferencedAssemblies "System.IO.Compression", "System.IO.Compression.FileSystem" -OutputAssembly $stubPath -OutputType ConsoleApplication
+# Compiled under its final name (shown as the original file name in file properties), in a private folder
+$stubDir = New-ToolkitPrivateDirectory -Path (Join-Path $env:TEMP "ToolkitStub_$([guid]::NewGuid().ToString('N'))")
+$stubPath = Join-Path $stubDir "${exeBaseName}_Locked.exe"
+Add-Type -TypeDefinition $csharpCode -ReferencedAssemblies "System.IO.Compression", "System.IO.Compression.FileSystem", "System.Windows.Forms" -OutputAssembly $stubPath -OutputType WindowsApplication
 
 Write-Host "Bundling..." -ForegroundColor Yellow
 if (Test-Path $targetExe) { Remove-Item $targetExe -Force }
@@ -229,7 +260,7 @@ try {
 # Cleanup
 Remove-Item $tempStaging -Recurse -Force
 Remove-Item $zipPath -Force
-Remove-Item $stubPath -Force
+Remove-ToolkitTree -LiteralPath $stubDir
 
 Write-Host "`nSUCCESS! Locked toolkit exported to: $targetExe" -ForegroundColor Green
 Write-Host "This executable can now be distributed safely." -ForegroundColor White

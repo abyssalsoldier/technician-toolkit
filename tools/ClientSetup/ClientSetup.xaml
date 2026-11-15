@@ -103,7 +103,7 @@
                     <Border CornerRadius="4" Background="#FF181825" BorderBrush="{StaticResource PanelBorder}" BorderThickness="1" Height="50" Margin="0,0,0,10">
                         <DockPanel Margin="16,0">
                             <Image Name="imgPreviewLogo" Height="28" MaxWidth="160" Margin="0,0,10,0" Stretch="Uniform" VerticalAlignment="Center" DockPanel.Dock="Left" Visibility="Collapsed"/>
-                            <TextBlock Name="txtPreviewName" Text="Endpoint Toolkit" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" DockPanel.Dock="Left" Foreground="{StaticResource Accent}"/>
+                            <TextBlock Name="txtPreviewName" Text="Technician Toolkit" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" DockPanel.Dock="Left" Foreground="{StaticResource Accent}"/>
                             <TextBlock Name="txtPreviewVersion" Text="v1.0.0" FontSize="13" Foreground="{StaticResource Dim}" VerticalAlignment="Center" Margin="10,0,0,0" DockPanel.Dock="Left"/>
                             <TextBlock Text="Live preview" Foreground="{StaticResource Dim}" VerticalAlignment="Center" HorizontalAlignment="Right"/>
                         </DockPanel>
@@ -123,6 +123,8 @@
                     </StackPanel>
                     <TextBlock Style="{StaticResource Label}" Text="Support contact (shown in the log and session report)"/>
                     <TextBox Name="txtSupport" MaxLength="120"/>
+                    <TextBlock Style="{StaticResource Label}" Text="Company name (shown in the exe's file properties; empty = product name)"/>
+                    <TextBox Name="txtCompany" MaxLength="100"/>
                     <TextBlock Style="{StaticResource Label}" Text="Your version"/>
                     <StackPanel Orientation="Horizontal">
                         <TextBox Name="txtVersion" Width="110"/>

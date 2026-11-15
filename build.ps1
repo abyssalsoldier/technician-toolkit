@@ -1,4 +1,4 @@
-# build.ps1 — Local build and test script for Endpoint Build Toolkit
+# build.ps1 — Local build and test script for Technician Toolkit
 # Mirrors the same exclusions as .github/workflows/release.yml
 #
 # Usage:
@@ -71,7 +71,7 @@ foreach ($w in $overlayWarnings) { Write-Host "WARNING: $w" -ForegroundColor Yel
 # Effective version: client\version.txt when present, else dependencies\version.txt
 $versionInfo = Get-ToolkitVersionInfo -Root (Join-Path $repoRoot "dependencies") -Parent $repoRoot
 $version = $versionInfo.Effective
-$productName = if ($branding.IsClient) { $branding.ProductName } else { "Endpoint Build Toolkit" }
+$productName = if ($branding.IsClient) { $branding.ProductName } else { "Technician Toolkit" }
 # Exe name stays EndpointToolkit.exe (ConnectWise Toolbox entries depend on it) unless the client sets ExeName
 $exeBaseName = if ($branding.ExeName) { $branding.ExeName } else { "EndpointToolkit" }
 
@@ -120,11 +120,11 @@ if ($Dev -or $Test) {
         Write-Host "Launching toolkit..." -ForegroundColor Yellow
         $launchBat = Join-Path $outputPath "Launch.bat"
         if (Test-Path $launchBat) {
-            Start-Process cmd.exe -ArgumentList "/c `"$launchBat`"" -Verb RunAs
+            Start-Process cmd.exe -ArgumentList "/c `"$launchBat`"" -Verb RunAs -WindowStyle Hidden
         } else {
             $setupScript = Join-Path $outputPath "dependencies\Invoke-EndpointSetup.ps1"
             if (Test-Path $setupScript) {
-                Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$setupScript`"" -Verb RunAs
+                Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$setupScript`"" -Verb RunAs -WindowStyle Hidden
             } else {
                 Write-Host "Could not find launch entry point." -ForegroundColor Red
             }
@@ -220,7 +220,7 @@ if ($Dev -or $Test) {
 
         # 1. Write the bootstrap script
         $bootstrapScript = @'
-# bootstrap.ps1 for Endpoint Build Toolkit SFX
+# bootstrap.ps1 for Technician Toolkit SFX
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName PresentationFramework
 
@@ -272,7 +272,7 @@ try {
 
     # Launch Invoke-EndpointSetup.ps1 as Admin
     $setupScript = Join-Path $tempDir "dependencies\Invoke-EndpointSetup.ps1"
-    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$setupScript`"" -Verb RunAs -Wait
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$setupScript`"" -Verb RunAs -Wait -WindowStyle Hidden
 } catch {
     [System.Windows.MessageBox]::Show("Failed to launch toolkit: $($_.Exception.Message)", "Launch Error", "OK", "Error") | Out-Null
 } finally {
@@ -295,7 +295,7 @@ SEDVersion=3
 
 [Options]
 PackagePurpose=InstallApp
-ShowInstallProgramWindow=0
+ShowInstallProgramWindow=1
 HideExtractAnimation=1
 UseLongFileName=1
 InsideCompressed=1

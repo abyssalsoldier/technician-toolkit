@@ -1,6 +1,6 @@
 # How to write a module for {{ProductName}}
 
-You are an AI coding agent writing a **client module** for {{ProductName}}, a branded build of the Endpoint Toolkit (core v{{CoreVersion}}). It's a PowerShell 5.1+ / WPF toolkit that MSP technicians run on Windows endpoints from a USB stick, a self-extracting exe, or a **ConnectWise Control Toolbox** upload, sometimes as **SYSTEM**.
+You are an AI coding agent writing a **client module** for {{ProductName}}, a branded build of the Technician Toolkit (core v{{CoreVersion}}). It's a PowerShell 5.1+ / WPF toolkit that MSP technicians run on Windows endpoints from a USB stick, a self-extracting exe, or a **ConnectWise Control Toolbox** upload, sometimes as **SYSTEM**.
 
 This document is self-contained. Follow it exactly. The module will be checked automatically when it is added in the Client Setup wizard, and it is **rejected** if it breaks the rules in [Section 5](#5-checks-the-module-must-pass).
 
