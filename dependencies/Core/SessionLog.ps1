@@ -1,5 +1,5 @@
 # Core: SessionLog.ps1
-# Session logging and close-out report (console-only, no WPF)
+# Session log and the Session Report text (shown by the GUI's Session Report dialog)
 
 function Initialize-SessionLog {
     $script:Toolkit.Session = @{
@@ -8,33 +8,6 @@ function Initialize-SessionLog {
         ScriptVersion  = $script:Toolkit.Version
         ModulesRun     = [System.Collections.ArrayList]::new()
         Errors         = [System.Collections.ArrayList]::new()
-    }
-}
-
-function Write-SessionEvent {
-    param(
-        [string]$Name,
-        [string]$Label,
-        [scriptblock]$Action
-    )
-    $entry = @{
-        Name      = $Name
-        Label     = $Label
-        StartTime = Get-Date
-        EndTime   = $null
-        Status    = "Success"
-        Detail    = ""
-    }
-    try {
-        & $Action
-    } catch {
-        $entry.Status = "Error"
-        $entry.Detail = $_.Exception.Message
-        $script:Toolkit.Session.Errors.Add($_.Exception.Message) | Out-Null
-        Write-Host "Error in ${Label}: $($_.Exception.Message)" -ForegroundColor Red
-    } finally {
-        $entry.EndTime = Get-Date
-        $script:Toolkit.Session.ModulesRun.Add($entry) | Out-Null
     }
 }
 
@@ -101,37 +74,4 @@ function Get-SessionReport {
     $report += "============================================"
 
     return ($report -join "`r`n")
-}
-
-function Format-SessionLogText {
-    if (-not $script:Toolkit.Session -or $script:Toolkit.Session.ModulesRun.Count -eq 0) {
-        return "No modules have been run yet."
-    }
-    $lines = @()
-    foreach ($m in $script:Toolkit.Session.ModulesRun) {
-        $duration = if ($m.EndTime) { ($m.EndTime - $m.StartTime).ToString('mm\:ss') } else { "??:??" }
-        $icon = switch ($m.Status) {
-            "Success" { "[OK]" }
-            "Skipped" { "[SKIP]" }
-            "Error"   { "[FAIL]" }
-        }
-        $line = "  $icon $($m.Label) ($duration)"
-        if ($m.Detail) { $line += " - $($m.Detail)" }
-        $lines += $line
-    }
-    return ($lines -join "`r`n")
-}
-
-function Show-SessionReport {
-    $reportText = Get-SessionReport
-    Write-Host ""
-    Write-Host $reportText
-    Write-Host ""
-
-    try {
-        Set-Clipboard -Value $reportText
-        Write-Host "Report copied to clipboard." -ForegroundColor Green
-    } catch {
-        Write-Host "Could not copy to clipboard. You can select and copy the text above." -ForegroundColor Yellow
-    }
 }

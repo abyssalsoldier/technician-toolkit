@@ -20,8 +20,8 @@
                   "dependencies/Core/Crypto.ps1":  "5e6ff20ca07d998fe749ae5111a22e53359cdd2478417c330d4eca1e382a8014",
                   "dependencies/Core/Get-EndpointInfo.ps1":  "eadcacc977016c667946745dc2aca5dbc415e6963cc25ea483c5b423ecc84d9a",
                   "dependencies/Core/LockedKit.ps1":  "55fb782ae79cc81b6722d7c120f51e7c7a313ab2232a312e069b088426f7d759",
-                  "dependencies/Core/ModuleLoader.ps1":  "0cfb14790cbd9440e070b8dd01d6f58deeb9feb6c2a9c80953abcb3397ead24d",
-                  "dependencies/Core/SessionLog.ps1":  "b3451473a83d76d1bad6c82e7ab5e395b227e01fc0dd3acf4fc960541524abb1",
+                  "dependencies/Core/ModuleLoader.ps1":  "6965675593a43262573f4318e09e1800d668650a4555f8b65a3620f9d3ad76e5",
+                  "dependencies/Core/SessionLog.ps1":  "1a0be34b0d6b69e3b5bd4b736e3b901031b8f01cfa60dceb2c292bebb5176250",
                   "dependencies/Core/UsbDetection.ps1":  "7cab3ec8c16179b00eddd065c59a5d965e9a34298f4ed3b7139089b8930ecc9a",
                   "dependencies/CustomInstallers/ODT/setup.exe":  "f266bc16834fbfae5aa7aca7c27ed5f393cac0bb2acebc2d5bb2dd7813cf7497",
                   "dependencies/Invoke-EndpointSetup.ps1":  "5d6d229accf18fdccfb5766241eb278fe0aa7e5d4b75fd8842e91e7742d3021f",
@@ -42,7 +42,7 @@
                   "dependencies/UI/Write-Log.ps1":  "382bdadb12ace82ef57516a05d89e5a542004a6d20378b79d86ae9dee82d8e23",
                   "dependencies/version.txt":  "fe650098093fad42070e8a2cacfb216a6c416af57bd26dd6ff479fef69f8bc71",
                   "Launch.bat":  "3ad2c68a7e773fa136849b2964f00d809f31247859a4f531b49c2915cd266524",
-                  "README.md":  "18934dc764ef96315f98f8df0ad04ab36df230a89ce5f8d17e58eb788c148c99",
+                  "README.md":  "26ba30586dbb218449e387f80b5788ff26fb4eeaa5aceb2a6527728c918331b8",
                   "Setup-Client.bat":  "9c8dc5a7686129797ece1729427f49957dfb276f4e64799adfc165f83c919488",
                   "SOFTWARE_CATALOG.md":  "48b2b9a6cb21953f30e638368dbb08911c65869364f8ba6032d4eb987406b7aa",
                   "tools/ClientSetup/ClientSetup.xaml":  "e49df49f2d7132c1c890b6403af76851eaaf7d0075744630f497b2d1469e1a41",
@@ -50,6 +50,6 @@
                   "tools/ClientSetup/Start-ClientSetup.ps1":  "a2f21a568b3b0c67d35ee03c783fcfe2676f98373725b8742afbb2e5e7dffa95",
                   "tools/OverlayValidation.ps1":  "6662296414c904c1053f0427f34b38f322984f24faa8cc8087dbf47554207bc5",
                   "tools/Test-ClientOverlay.ps1":  "5e7ff050a29ac9e6ea4ac042f79f173aad5be704df5eb501bcfe80fc089379dd",
-                  "UserGuide.md":  "0b123c7f4155bd72bb1bc66d98245e5f70ebe55cc008f58dda3b39a11f45b58a"
+                  "UserGuide.md":  "97430988152fa5eec45509f96626925a7139976713cfa5cf7e3d2e14137b09f5"
               }
 }

@@ -68,18 +68,3 @@ function Get-RegisteredModules {
 
     return $registered | Sort-Object { $_.SortOrder }
 }
-
-function Invoke-RegisteredModule {
-    param(
-        [hashtable]$Module
-    )
-
-    if ($Module.RequiresAuth -and -not $script:Toolkit.Authenticated) {
-        Write-Host "  $($Module.Label) requires authentication. Skipping." -ForegroundColor Yellow
-        return
-    }
-
-    Write-SessionEvent -Name $Module.Name -Label $Module.Label -Action {
-        & $Module.EntryPoint
-    }
-}

@@ -19,7 +19,8 @@ This repository is the **core** and source of truth. Clients run their own brand
 *   branding with a live preview
 *   adding, creating, removing, hiding and locking modules
 *   installers and the update mode
-*   checks, and building the exe, locked exe or USB
+*   secrets (RMM site keys, tokens), encrypted into locked builds, with **Import secrets from module...**
+*   checks, and building the exe (plus a ready-to-run folder with `Launch.bat`), the locked exe or a USB
 
 GitHub-based client repos (core as an `upstream` remote) remain supported. What the `client/` folder holds:
 *   **Branding:** `client/branding.json` sets the product name, accent color, logo, support contact, update mode (`core` = automatic core updates that keep `client/`, `custom`, `none`), hidden modules and password-locked modules (`LockedModules`).
@@ -31,24 +32,23 @@ GitHub-based client repos (core as an `upstream` remote) remain supported. What 
 
 Setup and rules: [CLIENT_GUIDE.md](CLIENT_GUIDE.md). Instructions for AI agents: [AGENTS.md](AGENTS.md). Template: [client.example/](client.example/).
 
-## 🔒 Zero-Trust Security & Distribution
-
-The toolkit handles sensitive environment access, so the entire repository and execution lifecycle is built under a strict zero-trust philosophy.
+## 🔒 Security & Distribution
 
 ### Unlocked Base Repository
 The raw repository code (in `dependencies/`) contains no hardcoded credentials, API keys, or client data. When run locally via `Launch.bat`, the base toolkit launches completely unlocked. This ensures a frictionless experience for developers and kit builders.
 
-### Password-Protected SFX Export
-For external deployment, the toolkit can be securely compiled using `Export-LockedToolkit.ps1`. 
-*   **Compilation:** The script copies the raw toolkit into a temporary folder, prompts the admin for a distribution password, and generates an AES-256 encrypted `.sfx-key`. 
-*   **Stub Injection:** It compiles a standalone C# Self-Extracting Executable (SFX) on the fly and binds the zip payload to it.
-*   **Execution:** When run on a client machine, the SFX demands the correct password to decrypt the `.sfx-key` before allowing access.
+### Locked Exe (`Export-LockedToolkit.ps1`)
+*   **Vault:** Locked client modules (and the wizard's secrets) are encrypted into `client\.locked\vault.bin` with a random main key (AES-256 + HMAC-SHA256). Their `.ps1` files are not in the exe. The vault also records a SHA-256 of every kit file, so a kit with changed files refuses to unlock.
+*   **Password:** The main key is stored in `.sfx-key`, wrapped with the kit password (PBKDF2 with a random salt, plus a tamper check). The password must be at least 8 characters.
+*   **Execution:** The exe opens without a password. Unlocked modules work right away; the first click on a locked module asks for the password and decrypts the locked modules and secrets **in memory only**.
+*   **Extraction:** The C# stub extracts to `%TEMP%\EndpointToolkit_SC`, restricted to the user, SYSTEM and Administrators. It refuses to start if a previous copy of that folder can't be removed and secured (important under ConnectWise/SYSTEM, where TEMP is the shared `C:\Windows\Temp`).
+*   **Limits:** Core code and unlocked modules are readable by anyone with the exe; only the vault is protected. Anyone with the password can use the secrets.
 
 ### BitLocker-Protected USB Portable Mode
 For off-grid environments, the `Setup-UsbToolkit` module turns a standard USB flash drive (16 GB+) into a portable toolkit.
 *   **Plain files, encrypted drive:** The toolkit is copied onto the stick as normal files (no executable is built), and the drive is protected with **BitLocker To Go** (XTS-AES 256) using the technician's custom password. The drive stays fully rewritable. BitLocker requires a password of at least 8 characters. If enabling BitLocker fails, the toolkit files are removed from the drive.
 *   **Requirements:** Only *enabling* BitLocker needs Windows Pro/Enterprise on the build machine. Any Windows edition, including Home, can unlock the drive with the password.
-*   **Hardware-bound toolkit key:** A hidden `.toolkit-key` stores the toolkit key encrypted with the drive's **hardware serial number** plus the custom password. After the drive is unlocked, the toolkit asks for that same password to unlock its features. A `.toolkit-key` copied to another stick won't decrypt.
+*   **Hardware-bound toolkit key:** A hidden `.toolkit-key` stores the kit's main key encrypted with the drive's **hardware serial number** plus the custom password. Locked modules and secrets are in the same encrypted vault as the locked exe; the first click on a locked module asks for the password. A `.toolkit-key` copied to another stick won't decrypt.
 
 ### Run-From-Local-Copy
 When `Launch.bat` is started from a USB drive, the toolkit first checks for updates (see below), then copies itself to a randomized `%TEMP%\EndpointToolkit_<guid>` folder with a progress window and re-points the running instance at that copy. Once the main window appears, the technician can **pull the USB** and move to the next PC. The local copy is deleted on exit. If the copy fails, the toolkit warns that it is running from the USB and must not be unplugged.
@@ -59,13 +59,14 @@ USB toolkits update themselves from this repository's [GitHub Releases](https://
 *   **Checking:** On launch from a USB, the toolkit reads `releases/latest/download/version.txt` from this repo, or from the client's `UpdateBaseUrl` in a client build. Only a *newer* version triggers an update prompt (a message box, since the console is hidden).
 *   **Integrity:** The downloaded zip must match `latest.sha256` or the update is aborted. A missing or malformed checksum also aborts.
 *   **Deploying:** The release is mirrored onto the USB (files removed from the release are removed from the stick). Technician-added files in `CustomInstallers/` are kept, and the toolkit relaunches at the new version.
+*   **Locked USBs don't self-update:** their vault pins every kit file, so an update would make them refuse to unlock. Re-create them from the new version.
+*   **Authenticity:** the checksum comes from the same release as the zip, so it proves the download is complete, not who published it. Protect the GitHub account (2FA) that publishes releases.
 *   **To ship a release:** bump `dependencies/version.txt`, commit, and push to `master`.
 
-### Volatile Execution & Cleanup
-Whether executing from a distributed SFX `.exe` or a USB drive, the toolkit strictly enforces ephemeral execution:
-1.  **Extraction:** The SFX extracts to the Windows `%TEMP%` directory, and USB launches run from a randomized local copy in `%TEMP%`.
+### Temporary Execution & Cleanup
+1.  **Extraction:** The SFX extracts to `%TEMP%\EndpointToolkit_SC`, and USB launches run from a randomized local copy in `%TEMP%`.
 2.  **Detached Execution:** Once the toolkit is running from `%TEMP%`, the `.exe` or USB is no longer needed.
-3.  **Wipe:** Upon clicking the **Quit** button in the UI, a cleanup routine explicitly wipes all temporary folders, the local copy, downloaded installers, decrypted keys, and active PowerShell sessions from memory and disk.
+3.  **Cleanup:** When the window closes (**Quit** or the window's X), the toolkit clears the main key, secrets and decrypted modules from its variables and deletes the extracted copy, the local USB copy and its temp working folders. Secrets and locked modules are never written to disk in decrypted form. Reports saved to `C:\_INFO\` are kept on purpose.
 
 ## 🧩 Modules
 | Module | What it does |

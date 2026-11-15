@@ -6,8 +6,8 @@ Welcome to the Endpoint Toolkit. This manual provides step-by-step instructions 
 
 1. **Launch the Toolkit:** Double-click the `Launch.bat` file.
    * If you are running the local base repository, it will open instantly.
-   * If you are running a distributed `.exe`, you will be prompted for a password. You have up to 3 attempts. Successfully authenticating unlocks the toolkit and its features.
-   * If you are running from a USB portable toolkit, Windows asks for the drive's BitLocker password when you plug it in. The toolkit then checks for updates, copies itself locally so you can unplug the USB, and prompts for the same password to unlock its features.
+   * If you are running a locked `.exe`, it opens without a password. Modules marked **[LOCKED]** ask for the password the first time you click one (up to 3 attempts), and that unlocks all of them for the session.
+   * If you are running from a USB portable toolkit, Windows asks for the drive's BitLocker password when you plug it in. The toolkit then checks for updates, copies itself locally so you can unplug the USB, and asks for the same password the first time you open a locked module.
 2. **Navigation:** The toolkit interface consists of three main panels:
    * **Navigation Panel (Left):** Select modules to use (Dashboard, Software Manager, etc.), build a USB Toolkit, view the Session Report, or Quit.
    * **Action Panel (Center):** Displays the active module's interface (defaults to the Dashboard).
@@ -87,9 +87,11 @@ Moves settings from an old Windows install to a new one (rebuilds, PC replacemen
 You can package your toolkit into a secure, password-protected executable (`.exe`) to email or send to external sites.
 1. Open a PowerShell console as Administrator.
 2. Run the export script: `.\dependencies\Agent\Export-LockedToolkit.ps1`
-3. Enter a custom password when prompted (the recipient will need this password).
+3. Enter a custom password of at least 8 characters when prompted (the recipient will need this password).
 4. Provide an output path (e.g., `C:\Users\Public\Desktop`).
 5. The script will bundle the entire toolkit and compile it into `EndpointToolkit_Locked.exe`.
+
+Client builds are easier from the **Client Setup** wizard (`Setup-Client.bat` → **Check & Build**), which also offers **Build exe + folder** for a plain, ready-to-run copy.
 
 ### 💾 Building a USB Portable Toolkit (For Offline Sites)
 The USB Toolkit allows you to build a secure, portable version for client sites. The drive is protected with BitLocker To Go.
@@ -104,14 +106,15 @@ The USB Toolkit allows you to build a secure, portable version for client sites.
 2. Run `Launch.bat` from the drive.
 3. If a newer version has been released, you'll be asked whether to update the USB first. The download is checksum-verified before anything is replaced.
 4. The toolkit copies itself to a temporary local folder. **Once the toolkit window appears, you can safely unplug the USB drive and move to the next computer!**
-5. Enter your custom USB password at the toolkit prompt to unlock its features.
+5. When you open a **[LOCKED]** module, enter your custom USB password to unlock the locked modules.
 
 ### 🔄 Updating the Toolkit
 * USB toolkits update themselves from the GitHub releases of `abyssalsoldier/technician-toolkit` whenever they're launched with internet access. You're only prompted when a **newer** version exists.
+* A USB with locked modules doesn't self-update. Re-create it with **USB Toolkit** from the new version.
 * **To publish a new version:** bump `dependencies/version.txt`, commit, and push to `master`. The GitHub Action builds and publishes the release automatically.
 
 ---
 
 ## 🧹 Proper Cleanup
-* **Always use the Quit button:** When you are finished, click the **Quit** button in the bottom-left corner of the navigation panel.
-* This explicitly triggers the Zero-Trust cleanup routines, wiping all temporary files, extracted contents, and session data from the endpoint. Do not simply click the "X" in the top right corner.
+* **Close the toolkit when you're done:** click **Quit** in the bottom-left corner of the navigation panel (closing the window with X does the same).
+* Closing clears the password-protected data from memory and deletes the toolkit's temporary copy and working files from the endpoint. Reports saved to `C:\_INFO\` stay on purpose.
