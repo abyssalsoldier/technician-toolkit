@@ -128,6 +128,21 @@ function Format-ToolkitIntegrityReport {
     return $lines
 }
 
+function Test-ToolkitBuildOutputPath {
+    # Where builds may be written. Returns $null when -Path is allowed, else a reason.
+    # Anything inside the toolkit folder (except _builds) would be copied into the next build's payload,
+    # so a build could end up shipping its predecessor (and the client folder could ship build output).
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Path)
+    if (-not [System.IO.Path]::IsPathRooted($Path)) { return 'Use a full path (for example D:\Builds).' }
+    try { $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\') } catch { return "Not a valid folder path: $Path" }
+    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
+    $builds = Join-Path $rootFull '_builds'
+    $inside = { param($p, $base) $p -eq $base -or $p.StartsWith("$base\", [System.StringComparison]::OrdinalIgnoreCase) }
+    if ((& $inside $full $builds)) { return $null }
+    if ((& $inside $full $rootFull)) { return "Builds can't go inside the toolkit folder (only its _builds folder). Pick a folder outside $rootFull." }
+    return $null
+}
+
 function Assert-ToolkitCoreIntegrity {
     # Build gate used by build.ps1 and Export-LockedToolkit.ps1.
     # Client builds (client\ exists) refuse when core changed, unless -AllowModifiedCore.

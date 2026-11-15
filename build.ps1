@@ -8,6 +8,7 @@
 #   .\build.ps1 -Test        # Same as -Dev but also launches the toolkit
 #   .\build.ps1 -SFX         # Zip + self-extracting EndpointToolkit.exe
 #   .\build.ps1 -Folder      # Also a ready-to-run folder (_builds\v...\EndpointToolkit\Launch.bat); combines with -SFX
+#   -OutputPath D:\Builds    # Write the builds there instead of _builds\ (must be outside the toolkit folder)
 #
 # Core integrity: every build checks core files against dependencies\core-manifest.json.
 # With a client\ folder the build is REFUSED when core was changed. Core maintainers:
@@ -20,6 +21,7 @@ param(
     [switch]$Test,
     [switch]$SFX,
     [switch]$Folder,
+    [string]$OutputPath,
     [switch]$UpdateCoreManifest,
     [switch]$AllowModifiedCore
 )
@@ -56,6 +58,12 @@ if ($UpdateCoreManifest) {
 }
 if (-not (Assert-ToolkitCoreIntegrity -Root $repoRoot -AllowModifiedCore:$AllowModifiedCore)) { exit 1 }
 
+if ($OutputPath) {
+    $why = Test-ToolkitBuildOutputPath -Root $repoRoot -Path $OutputPath
+    if ($why) { Write-Host "ERROR: $why" -ForegroundColor Red; exit 1 }
+    $buildsRoot = [System.IO.Path]::GetFullPath($OutputPath).TrimEnd('\')
+}
+
 $overlayWarnings = [System.Collections.ArrayList]::new()
 $branding = Get-ToolkitBranding -Parent $repoRoot -Warnings $overlayWarnings
 foreach ($w in $overlayWarnings) { Write-Host "WARNING: $w" -ForegroundColor Yellow }
@@ -74,7 +82,7 @@ $buildDir = Join-Path $buildsRoot $buildName
 
 Write-Host "Building $productName v$version" -ForegroundColor Cyan
 if ($versionInfo.Client) { Write-Host "  Core: v$($versionInfo.Core)  Client: v$($versionInfo.Client)" -ForegroundColor White }
-Write-Host "  Output: _builds\$buildName\" -ForegroundColor White
+Write-Host "  Output: $buildDir" -ForegroundColor White
 Write-Host ""
 
 New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
@@ -150,6 +158,15 @@ if ($Dev -or $Test) {
     # Remove *.key files from staging
     Get-ChildItem -Path $tempStaging -Filter "*.key" -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force
 
+    # Locked client modules (RequiresAuth, or LockedModules in branding.json) are left out: this zip,
+    # its exe and folder have no password, so their code must not ship in them. Use the locked exe.
+    . (Join-Path $repoRoot "dependencies\Agent\LockedPayload.ps1")   # Get-ToolkitLockedModuleInfo
+    $omitted = @(Get-ToolkitLockedModuleInfo -Root $tempStaging)
+    foreach ($m in $omitted) { Remove-Item -LiteralPath $m.File -Force }
+    if ($omitted.Count) {
+        Write-Host "  Locked modules left out (no password in this build): $(($omitted | ForEach-Object { $_.Label }) -join ', ')" -ForegroundColor Yellow
+    }
+
     # Ready-to-run folder: exactly the zip's contents, unzipped (run Launch.bat inside it)
     if ($Folder) {
         $folderPath = Join-Path $buildDir $exeBaseName
@@ -181,12 +198,25 @@ if ($Dev -or $Test) {
     if ($SFX) {
         Write-Host "Creating Self-Extracting EXE wrapper (SFX) using IExpress..." -ForegroundColor Cyan
 
-        # Write output EXE directly to builds root to avoid folder conflicts during IExpress compilation
+        # The finished exe goes to the builds root (default _builds\, or -OutputPath)
         $targetExe = Join-Path $buildsRoot "$exeBaseName.exe"
         if (Test-Path $targetExe) { Remove-Item $targetExe -Force -ErrorAction SilentlyContinue }
 
-        $bootstrapPath = Join-Path $buildDir "bootstrap.ps1"
-        $sedPath = Join-Path $buildDir "sfx.sed"
+        # IExpress fails on any path containing a space, so it compiles in a space-free work folder
+        # and the exe is moved to the chosen output folder afterwards.
+        $iexBase = $env:TEMP
+        if ($iexBase -match '\s') {
+            try { $short = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($iexBase).ShortPath; if ($short -notmatch '\s') { $iexBase = $short } } catch { }
+        }
+        if ($iexBase -match '\s') { $iexBase = $env:ProgramData }
+        $iexDir = Join-Path $iexBase "toolkit-sfx-$([guid]::NewGuid().ToString('N'))"
+        if ($iexDir -match '\s') { Write-Host "No folder without spaces was found for IExpress (TEMP: $env:TEMP)." -ForegroundColor Red; exit 1 }
+        New-Item -ItemType Directory -Path $iexDir -Force | Out-Null
+        Copy-Item -LiteralPath $zipPath -Destination (Join-Path $iexDir 'endpoint-build-toolkit.zip')
+        $iexExe = Join-Path $iexDir "$exeBaseName.exe"
+
+        $bootstrapPath = Join-Path $iexDir "bootstrap.ps1"
+        $sedPath = Join-Path $iexDir "sfx.sed"
 
         # 1. Write the bootstrap script
         $bootstrapScript = @'
@@ -245,7 +275,7 @@ try {
         Set-Content -Path $bootstrapPath -Value $bootstrapScript -Encoding ascii -Force
 
         # 2. Write the IExpress SED configuration file
-        $srcDir = (Resolve-Path $buildDir).Path
+        $srcDir = $iexDir
         if (-not $srcDir.EndsWith("\")) { $srcDir += "\" }
         
         $sedContent = @"
@@ -277,7 +307,7 @@ SourceFiles=SourceFiles
 InstallPrompt=
 DisplayLicense=
 FinishMessage=
-TargetName=$targetExe
+TargetName=$iexExe
 FriendlyName=$productName
 AppLaunched=powershell.exe -NoProfile -ExecutionPolicy Bypass -File bootstrap.ps1
 PostInstallCmd=<None>
@@ -296,7 +326,7 @@ SourceFiles0=$srcDir
         Set-Content -Path $sedPath -Value $sedContent -Encoding ascii -Force
 
         # Ensure files are not locked by the OS or Antivirus before compiling
-        $filesToCheck = @($zipPath, $bootstrapPath, $sedPath)
+        $filesToCheck = @((Join-Path $iexDir 'endpoint-build-toolkit.zip'), $bootstrapPath, $sedPath)
         foreach ($file in $filesToCheck) {
             $unlocked = $false
             for ($i = 0; $i -lt 10; $i++) {
@@ -319,19 +349,19 @@ SourceFiles0=$srcDir
         Write-Host "Compiling SFX..." -ForegroundColor Yellow
         $proc = Start-Process iexpress -ArgumentList "/N", "/Q", $sedPath -Wait -NoNewWindow -PassThru
         $exitCode = $proc.ExitCode
-        
-        if ($exitCode -eq 0 -and (Test-Path $targetExe)) {
-            # Clean up temporary build artifacts only on success
-            Remove-Item $bootstrapPath -Force -ErrorAction SilentlyContinue
-            Remove-Item $sedPath -Force -ErrorAction SilentlyContinue
-            
+
+        if ($exitCode -eq 0 -and (Test-Path $iexExe)) {
+            Move-Item -LiteralPath $iexExe -Destination $targetExe -Force
+            Remove-Item -LiteralPath $iexDir -Recurse -Force -ErrorAction SilentlyContinue
+
             $exeSize = [math]::Round((Get-Item $targetExe).Length / 1MB, 2)
             Write-Host "SFX build complete: $targetExe ($exeSize MB)" -ForegroundColor Green
             Write-Host ""
         } else {
             Write-Host "SFX compilation failed (iexpress exit code $exitCode)." -ForegroundColor Red
-            Write-Host "Staged files left at $buildDir for debugging (sfx.sed, bootstrap.ps1)." -ForegroundColor Yellow
+            Write-Host "Staged files left at $iexDir for debugging (sfx.sed, bootstrap.ps1)." -ForegroundColor Yellow
             Write-Host ""
+            exit 1
         }
     }
 

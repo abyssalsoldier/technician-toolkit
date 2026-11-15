@@ -44,9 +44,11 @@ $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr
 [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
 
 $outPath = if ($OutputPath) { $OutputPath } else { Read-Host "Enter output path (e.g., C:\Users\Public\Desktop)" }
+$why = Test-ToolkitBuildOutputPath -Root $toolkitRoot -Path $outPath
+if ($why) { Write-Host "ERROR: $why" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path $outPath)) {
-    Write-Host "Output path not found." -ForegroundColor Red
-    exit 1
+    try { New-Item -ItemType Directory -Path $outPath -Force | Out-Null }
+    catch { Write-Host "Output folder can't be created: $($_.Exception.Message)" -ForegroundColor Red; exit 1 }
 }
 
 $targetExe = Join-Path $outPath "${exeBaseName}_Locked.exe"

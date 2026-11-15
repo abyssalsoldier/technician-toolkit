@@ -31,7 +31,7 @@ The toolkit reads `client\` at launch. This works the same way for `Launch.bat`,
    5. **Installers:** add your `.exe`/`.msi` installers, for example your RMM agent.
    6. **Updates:** choose how USB toolkits update (see [Updates](#updates)).
    7. **Check & Build:** run the checks, then **Build exe + folder**, **Build locked exe** or **Make USB**.
-4. Your builds are in `C:\Toolkit\_builds\`. The exe names stay `EndpointToolkit.exe` and `EndpointToolkit_Locked.exe`, so existing ConnectWise Toolbox entries keep working.
+4. Your builds are in `C:\Toolkit\_builds\`, or in the **Output folder** you chose on the Check & Build page (any folder outside the toolkit folder; the wizard remembers it on this PC). The exe names stay `EndpointToolkit.exe` and `EndpointToolkit_Locked.exe`, so existing ConnectWise Toolbox entries keep working.
 
 Run `Setup-Client.bat` again at any time to make changes. It loads your current settings.
 
@@ -131,12 +131,12 @@ If you need something that isn't on this list, ask the toolkit provider to add i
 | Build | Locked modules | Secrets |
 |---|---|---|
 | `Launch.bat` from your folder | Unlocked (your test environment) | Read from your `secrets.dat` |
-| **Build exe + folder** (`EndpointToolkit.exe`, plus a folder you run with `Launch.bat`: `_builds\v<version>_<date>\EndpointToolkit\`) | **Included unprotected**, no password | **Not included** |
+| **Build exe + folder** (`EndpointToolkit.exe`, plus a folder you run with `Launch.bat`: `_builds\v<version>_<date>\EndpointToolkit\`) | **Left out** (no password in this build) | **Not included** |
 | **Build locked exe** | Encrypted inside the exe | Encrypted inside the exe |
 | **Make USB** | Encrypted on the stick | Encrypted on the stick |
 
 **How a locked exe or USB behaves:**
-- It opens **without a password**. Unlocked modules work right away. Locked ones show `[LOCKED]`.
+- It opens **without a password**. Unlocked modules work right away. Locked ones show a lock icon and `[LOCKED]`.
 - Clicking a locked module (or **USB Toolkit**) asks for the password **once** and unlocks every locked module and the secrets for that session. They are decrypted in memory only, never written to disk.
 - A **USB** needs the locked exe's password to create, then gets **its own password**. It only unlocks on that physical stick, so copied files are useless elsewhere. BitLocker To Go protects the stick when it's unplugged.
 - Changed toolkit files are refused. If any file under `dependencies\` or `client\` was edited, added or removed, the kit won't unlock ("Kit files were changed"). Rebuild the kit or re-create the USB. Your own files elsewhere on the stick, and installers added to `CustomInstallers`, are fine and can be edited freely.
@@ -200,6 +200,7 @@ A mistake in `branding.json` never stops the toolkit from starting. It uses the 
 | `.\tools\Test-ClientOverlay.ps1` | Runs every check the wizard runs (overlay, modules, core integrity) |
 | `.\build.ps1 -SFX` | Zip + `_builds\EndpointToolkit.exe` |
 | `.\build.ps1 -SFX -Folder` | Same, plus a ready-to-run folder (`_builds\v<version>_<date>\EndpointToolkit\Launch.bat`). This is what the wizard's **Build exe + folder** runs |
+| `-OutputPath D:\Builds` | With `build.ps1` or `Export-LockedToolkit.ps1`: write the builds there instead of `_builds\` (must be outside the toolkit folder) |
 | `.\dependencies\Agent\Export-LockedToolkit.ps1` | `EndpointToolkit_Locked.exe` (asks for password and folder) |
 | `.\build.ps1 -Test` | Copies to `_builds\` and launches, for a quick test |
 
@@ -243,6 +244,9 @@ git add client; git commit -m "Add Acme client"; git push
 - Fixed: the release workflow no longer pastes `ProductName` or the version into shell commands.
 - Changed: passwords for locked exes and USB sticks must be at least 8 characters.
 - New: the wizard's **Build exe + folder** (was **Build exe**) also makes a ready-to-run folder, `_builds\v<version>_<date>\EndpointToolkit\`, that you start with its `Launch.bat`. From the command line: `.\build.ps1 -Folder`.
+- Changed: the plain exe, folder build and zip (`build.ps1` without `-Dev`/`-Test`) **leave out locked modules**, because they have no password. Before, they included them unprotected. Ship locked modules with **Build locked exe** or a USB.
+- New: locked modules show a lock icon in the menu, as well as `[LOCKED]`.
+- New: **Output folder** on the Check & Build page (with **Browse...** and **Default**) chooses where the exe, folder build and locked exe go. Command line: `-OutputPath`.
 - New: modules list the secrets they need with `Secrets = @('Name', ...)` in their Register function. The Secrets page has **Import secrets from module...**, and adding a module offers to add its secrets. The checks warn when a module reads a secret it doesn't list.
 
 ### Core 2.2.0

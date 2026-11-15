@@ -229,7 +229,7 @@
             <DockPanel Name="page6" Visibility="Collapsed">
                 <StackPanel DockPanel.Dock="Top">
                     <TextBlock Style="{StaticResource H1}" Text="Check &amp; Build"/>
-                    <TextBlock Style="{StaticResource Hint}" Text="Everything is checked before each build. Builds go to the _builds folder. 'Build exe + folder' also makes a ready-to-run copy you start with its Launch.bat. The exe names stay EndpointToolkit.exe and EndpointToolkit_Locked.exe, so existing ConnectWise Toolbox entries keep working."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Everything is checked before each build. Builds go to the output folder below (default: the toolkit's _builds folder). 'Build exe + folder' also makes a ready-to-run copy you start with its Launch.bat. The exe names stay EndpointToolkit.exe and EndpointToolkit_Locked.exe, so existing ConnectWise Toolbox entries keep working."/>
                     <WrapPanel Margin="0,0,0,8">
                         <Button Name="btnCheck" Content="Check everything" Margin="0,0,8,8"/>
                         <Button Name="btnBuildExe" Content="Build exe + folder" Margin="0,0,8,8"/>
@@ -238,6 +238,12 @@
                         <CheckBox Name="chkExportSecrets" Content="Include secret values (asks for a passphrase)" VerticalAlignment="Center" Margin="0,0,16,8"/>
                         <Button Name="btnOpenBuilds" Content="Open builds folder" Margin="0,0,8,8"/>
                     </WrapPanel>
+                    <DockPanel Margin="0,0,0,10">
+                        <TextBlock DockPanel.Dock="Left" Text="Output folder:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <Button DockPanel.Dock="Right" Name="btnOutputDefault" Content="Default" Margin="8,0,0,0" ToolTip="Use the toolkit's _builds folder"/>
+                        <Button DockPanel.Dock="Right" Name="btnOutputBrowse" Content="Browse..." Margin="8,0,0,0"/>
+                        <TextBox Name="txtOutputDir" VerticalContentAlignment="Center" ToolTip="Where 'Build exe + folder' and 'Build locked exe' put their output. Must be outside the toolkit folder (or its _builds folder). Remembered on this PC."/>
+                    </DockPanel>
                     <Border CornerRadius="4" Background="#FF2D2D44" Padding="10" Margin="0,0,0,10">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Locked exe password:" VerticalAlignment="Center" Margin="0,0,8,0"/>

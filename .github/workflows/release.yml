@@ -79,6 +79,18 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Leave out locked client modules
+        # latest.zip has no password (plain USB updates), so locked modules must not ship in it (as in build.ps1)
+        if: steps.exists.outputs.exists == 'false' && hashFiles('client/**') != ''
+        shell: pwsh
+        run: |
+          . ./dependencies/Core/ClientOverlay.ps1
+          . ./dependencies/Agent/LockedPayload.ps1
+          foreach ($m in Get-ToolkitLockedModuleInfo -Root (Get-Location).Path) {
+            Remove-Item -LiteralPath $m.File -Force
+            Write-Host "Left out locked module: $($m.Name)"
+          }
+
       - name: Create clean zip
         if: steps.exists.outputs.exists == 'false'
         # Repo-only exclusions mirror Get-ToolkitPayloadExcludes in dependencies/Core/ClientOverlay.ps1

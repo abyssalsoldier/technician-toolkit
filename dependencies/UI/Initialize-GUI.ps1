@@ -302,7 +302,7 @@ function Update-ToolkitNav {
         $item.Content = $mod.Label
         $item.Tag = $mod
         if ($mod.RequiresAuth -and -not $Global:SyncHash.Toolkit.Authenticated) {
-            $item.Content = "$($mod.Label) [LOCKED]"
+            $item.Content = "$([char]::ConvertFromUtf32(0x1F512)) $($mod.Label) [LOCKED]"   # lock icon is outside the BMP
             $item.Opacity = 0.6
         }
         $nav.Items.Add($item) | Out-Null

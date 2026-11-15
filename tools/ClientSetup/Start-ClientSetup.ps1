@@ -149,6 +149,7 @@ foreach ($n in 'txtCoreInfo', 'lstSteps', 'txtWelcome', 'bdrIntegrity', 'txtInte
                'btnAddInstaller', 'txtInstallerTotal', 'pnlInstallers',
                'rbCore', 'rbCustom', 'rbNone', 'pnlCustom', 'txtFeedUrl', 'txtGitHubRepo', 'btnFillGitHub',
                'btnCheck', 'btnBuildExe', 'btnMakeUsb', 'btnExport', 'btnOpenBuilds', 'pwd1', 'pwd2', 'btnBuildLocked', 'txtOutput',
+               'txtOutputDir', 'btnOutputBrowse', 'btnOutputDefault',
                'txtStatus', 'btnBack', 'btnNext', 'btnSave') {
     $ui[$n] = $win.FindName($n)
 }
@@ -771,6 +772,47 @@ function Step-VersionIfRebuilt {
     }
 }
 
+# Build output folder: chosen on the Check & Build page, remembered on this PC in _builds\client-setup.json
+# (never in client\, which ships). Empty or "Default" = the toolkit's _builds folder.
+$script:WizardSettingsPath = Join-Path $BuildsRoot 'client-setup.json'
+function Read-WizardSettings {
+    if (-not (Test-Path $script:WizardSettingsPath)) { return @{} }
+    try { $j = Get-Content $script:WizardSettingsPath -Raw | ConvertFrom-Json; $h = @{}; foreach ($p in $j.PSObject.Properties) { $h[$p.Name] = $p.Value }; return $h } catch { return @{} }
+}
+function Save-WizardSetting {
+    param([string]$Name, $Value)
+    $h = Read-WizardSettings; $h[$Name] = $Value
+    New-Item -ItemType Directory -Path $BuildsRoot -Force | Out-Null
+    [System.IO.File]::WriteAllText($script:WizardSettingsPath, ([pscustomobject]$h | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
+}
+function Get-BuildOutputDir {
+    # The chosen output folder, created if needed and remembered; $null (after a message) when it can't be used.
+    $dir = $ui.txtOutputDir.Text.Trim().Trim('"')
+    if (-not $dir) { $dir = $BuildsRoot }
+    $why = Test-ToolkitBuildOutputPath -Root $Root -Path $dir
+    if ($why) { Show-Msg $why 'OK' 'Warning' | Out-Null; return $null }
+    $dir = [System.IO.Path]::GetFullPath($dir).TrimEnd('\')
+    if ($dir.Length -eq 2) { $dir += '\' }   # drive root (D:)
+    try { New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null }
+    catch { Show-Msg "The output folder can't be created: $($_.Exception.Message)" 'OK' 'Warning' | Out-Null; return $null }
+    $ui.txtOutputDir.Text = $dir
+    Save-WizardSetting 'OutputDir' $(if ($dir -eq $BuildsRoot) { '' } else { $dir })
+    return $dir
+}
+$saved = (Read-WizardSettings)['OutputDir']
+$ui.txtOutputDir.Text = if ($saved) { "$saved" } else { $BuildsRoot }
+$ui.btnOutputBrowse.Add_Click({
+    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dlg.Description = 'Where should builds go? (outside the toolkit folder)'
+    $dlg.ShowNewFolderButton = $true
+    $current = $ui.txtOutputDir.Text.Trim()
+    if ($current -and (Test-Path $current)) { $dlg.SelectedPath = $current }
+    if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+    $ui.txtOutputDir.Text = $dlg.SelectedPath
+    if (Get-BuildOutputDir) { Set-Status "Builds go to $($ui.txtOutputDir.Text)" }
+})
+$ui.btnOutputDefault.Add_Click({ $ui.txtOutputDir.Text = $BuildsRoot; if (Get-BuildOutputDir) { Set-Status "Builds go to $BuildsRoot" } })
+
 $script:job = $null
 function Start-BuildJob {
     # Runs a build script in a background runspace and streams the result into the output box.
@@ -828,13 +870,14 @@ $ui.btnBuildExe.Add_Click({
     $secretCount = (Get-WizardSecretSummary).Count
     if ($lockedClient.Count -or $secretCount) {
         $msg = "The plain exe and folder build have no password:`n"
-        if ($lockedClient.Count) { $msg += "`n - your locked modules ($(($lockedClient | ForEach-Object { $_.Label }) -join ', ')) are included unprotected and run without a password" }
+        if ($lockedClient.Count) { $msg += "`n - your locked modules ($(($lockedClient | ForEach-Object { $_.Label }) -join ', ')) are LEFT OUT of them" }
         if ($secretCount) { $msg += "`n - your $secretCount secret(s) are NOT included, so modules that need them won't work" }
-        $msg += "`n`nUse 'Build locked exe' to protect them. Build them anyway?"
+        $msg += "`n`nUse 'Build locked exe' to ship them with a password. Build the plain exe and folder without them?"
         if ((Show-Msg $msg 'YesNo' 'Warning') -ne 'Yes') { return }
     }
+    $out = Get-BuildOutputDir; if (-not $out) { return }
     Step-VersionIfRebuilt
-    Start-BuildJob -Title 'Build exe' -ScriptPath (Join-Path $Root 'build.ps1') -Params @{ SFX = $true; Folder = $true } -SuccessNote "Output: $BuildsRoot (the exe, plus a v<version> folder with a ready-to-run copy: run Launch.bat inside it)"
+    Start-BuildJob -Title 'Build exe' -ScriptPath (Join-Path $Root 'build.ps1') -Params @{ SFX = $true; Folder = $true; OutputPath = $out } -SuccessNote "Output: $out (the exe, plus a v<version> folder with a ready-to-run copy: run Launch.bat inside it)"
 })
 $ui.btnBuildLocked.Add_Click({
     if ($ui.pwd1.SecurePassword.Length -lt 8) { Show-Msg 'The password must be at least 8 characters.' 'OK' 'Warning' | Out-Null; return }
@@ -843,10 +886,11 @@ $ui.btnBuildLocked.Add_Click({
     $same = $p1 -ceq $p2; $p1 = $null; $p2 = $null
     if (-not $same) { Show-Msg 'The two passwords do not match.' 'OK' 'Warning' | Out-Null; return }
     if (-not (Invoke-FullCheck)) { return }
+    $out = Get-BuildOutputDir; if (-not $out) { return }
     Step-VersionIfRebuilt
     $secure = $ui.pwd1.SecurePassword.Copy()
     $ui.pwd1.Clear(); $ui.pwd2.Clear()
-    Start-BuildJob -Title 'Build locked exe' -ScriptPath (Join-Path $Root 'dependencies\Agent\Export-LockedToolkit.ps1') -Params @{ Password = $secure; OutputPath = $BuildsRoot } -SuccessNote "Output: $BuildsRoot"
+    Start-BuildJob -Title 'Build locked exe' -ScriptPath (Join-Path $Root 'dependencies\Agent\Export-LockedToolkit.ps1') -Params @{ Password = $secure; OutputPath = $out } -SuccessNote "Output: $out"
 })
 $ui.btnMakeUsb.Add_Click({
     if (-not (Invoke-FullCheck)) { return }
@@ -876,7 +920,7 @@ $ui.btnExport.Add_Click({
     }
     catch { Show-Msg "Export failed: $($_.Exception.Message)" 'OK' 'Error' | Out-Null }
 })
-$ui.btnOpenBuilds.Add_Click({ New-Item -ItemType Directory -Path $BuildsRoot -Force | Out-Null; Start-Process explorer.exe -ArgumentList "`"$BuildsRoot`"" })
+$ui.btnOpenBuilds.Add_Click({ $out = Get-BuildOutputDir; if ($out) { Start-Process explorer.exe -ArgumentList "`"$out`"" } })
 
 # ---------------------------------------------------------------- init
 function Initialize-Controls {
