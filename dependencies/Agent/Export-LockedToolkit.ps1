@@ -35,8 +35,8 @@ Write-Host "This will package the current toolkit folder into a standalone .exe 
 Write-Host ""
 
 $password = if ($Password) { $Password } else { Read-Host "Enter the password to lock this toolkit" -AsSecureString }
-if ($password.Length -lt 4) {
-    Write-Host "ERROR: Password must be at least 4 characters." -ForegroundColor Red
+if ($password.Length -lt 8) {
+    Write-Host "ERROR: Password must be at least 8 characters." -ForegroundColor Red
     exit 1
 }
 $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($password)
@@ -116,25 +116,40 @@ namespace EndpointToolkit
             string exePath = Assembly.GetExecutingAssembly().Location;
             string tempDir = Path.Combine(Path.GetTempPath(), "EndpointToolkit_SC");
             
-            if (Directory.Exists(tempDir)) {
-                try { Directory.Delete(tempDir, true); } catch { }
-            }
-            Directory.CreateDirectory(tempDir);
-            // Only this user, SYSTEM and Administrators may open the extracted kit
-            // (matters under ConnectWise/SYSTEM, where TEMP is the shared C:\Windows\Temp)
+            // Fail closed: under ConnectWise/SYSTEM, TEMP is the shared C:\Windows\Temp where any user can
+            // pre-create this folder (with planted .ps1 files and an ACL that blocks deletion). The kit is
+            // never extracted into a folder that could not be removed, re-secured and verified.
             try {
+                if (Directory.Exists(tempDir)) { Directory.Delete(tempDir, true); }
+                if (Directory.Exists(tempDir)) { throw new IOException("the previous copy could not be removed"); }
+                Directory.CreateDirectory(tempDir);
+                // Only this user, SYSTEM and Administrators may open the extracted kit
+                var me = System.Security.Principal.WindowsIdentity.GetCurrent().User;
+                var system = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.LocalSystemSid, null);
+                var admins = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null);
                 var sec = new System.Security.AccessControl.DirectorySecurity();
                 sec.SetAccessRuleProtection(true, false);
+                sec.SetOwner(me);
                 var inherit = System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit;
                 var full = System.Security.AccessControl.FileSystemRights.FullControl;
                 var allow = System.Security.AccessControl.AccessControlType.Allow;
                 var none = System.Security.AccessControl.PropagationFlags.None;
-                sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(System.Security.Principal.WindowsIdentity.GetCurrent().User, full, inherit, none, allow));
-                sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.LocalSystemSid, null), full, inherit, none, allow));
-                sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null), full, inherit, none, allow));
+                sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(me, full, inherit, none, allow));
+                sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(system, full, inherit, none, allow));
+                sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(admins, full, inherit, none, allow));
                 Directory.SetAccessControl(tempDir, sec);
-            } catch { }
-            
+                // Verify: empty, owned by a trusted principal
+                if (Directory.GetFileSystemEntries(tempDir).Length > 0) { throw new IOException("the folder is not empty"); }
+                var owner = Directory.GetAccessControl(tempDir).GetOwner(typeof(System.Security.Principal.SecurityIdentifier));
+                if (!(owner.Equals(me) || owner.Equals(system) || owner.Equals(admins))) { throw new IOException("the folder has an untrusted owner"); }
+            } catch (Exception ex) {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Refusing to start: " + tempDir + " is not safe (" + ex.Message + "). Delete it as an administrator and run again.");
+                Console.ResetColor();
+                if (Environment.UserInteractive) { try { Console.ReadKey(); } catch { } }
+                return;
+            }
+
             Console.WriteLine("Extracting Secure Toolkit...");
             try {
                 // Layout: [stub exe][payload zip][8-byte zip offset][8-byte "TKSFX1" marker].

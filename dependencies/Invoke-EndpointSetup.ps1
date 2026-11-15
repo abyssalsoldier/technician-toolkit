@@ -167,6 +167,9 @@ $tempPaths = @(
 foreach ($p in $tempPaths) {
     if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue }
 }
+# Self-update working files (unique names since 2.2.1); normally removed by Update-UsbToolkit itself
+Get-ChildItem -LiteralPath $env:TEMP -Filter 'endpoint-toolkit-update_*' -Force -ErrorAction SilentlyContinue |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 # Remove the local copy made from the USB at startup
 if ($localCopyRoot -and (Split-Path $localCopyRoot -Leaf).StartsWith('EndpointToolkit_', [System.StringComparison]::OrdinalIgnoreCase)) {

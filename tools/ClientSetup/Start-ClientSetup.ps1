@@ -791,7 +791,7 @@ $ui.btnBuildExe.Add_Click({
     Start-BuildJob -Title 'Build exe' -ScriptPath (Join-Path $Root 'build.ps1') -Params @{ SFX = $true } -SuccessNote "Output: $BuildsRoot"
 })
 $ui.btnBuildLocked.Add_Click({
-    if ($ui.pwd1.SecurePassword.Length -lt 4) { Show-Msg 'The password must be at least 4 characters.' 'OK' 'Warning' | Out-Null; return }
+    if ($ui.pwd1.SecurePassword.Length -lt 8) { Show-Msg 'The password must be at least 8 characters.' 'OK' 'Warning' | Out-Null; return }
     $p1 = [System.Net.NetworkCredential]::new('', $ui.pwd1.SecurePassword).Password
     $p2 = [System.Net.NetworkCredential]::new('', $ui.pwd2.SecurePassword).Password
     $same = $p1 -ceq $p2; $p1 = $null; $p2 = $null

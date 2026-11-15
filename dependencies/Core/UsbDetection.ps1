@@ -137,9 +137,10 @@ function Update-UsbToolkit {
 
     if (-not $script:Toolkit.IsUsb) { return }
     if (-not $LocalVersion) { $LocalVersion = $script:Toolkit.Version }
-    # A locked USB keeps its client modules and secrets in client\.locked\vault.bin. A client release
-    # replaces client\ with plain files, so only core updates (which keep client\) apply to it.
-    if (-not $KeepClientFolder -and (Test-Path -LiteralPath (Join-Path $script:Toolkit.Parent 'client\.locked\vault.bin'))) {
+    # A locked USB keeps its client modules and secrets in client\.locked\vault.bin, whose manifest pins
+    # every kit file (core included). Any update would make the kit fail its integrity check at unlock,
+    # so locked USBs are never self-updated: they are re-created from the new version instead.
+    if (Test-Path -LiteralPath (Join-Path $script:Toolkit.Parent 'client\.locked\vault.bin')) {
         if ($script:Toolkit.OverlayWarnings) { [void]$script:Toolkit.OverlayWarnings.Add('Self-update skipped: this USB is a locked kit. Re-create it from the new version (Make USB) to update it.') }
         return
     }
@@ -174,8 +175,11 @@ function Update-UsbToolkit {
         'Toolkit Update Available', 'YesNo', 'Question')
     if ($choice -ne 'Yes') { return }
 
-    $tempZip     = "$env:TEMP\endpoint-toolkit-update.zip"
-    $tempExtract = "$env:TEMP\endpoint-toolkit-update"
+    # Unique names: a fixed path in a shared TEMP (C:\Windows\Temp under SYSTEM) could be pre-created with
+    # planted files that Expand-Archive keeps and the mirror below would copy onto the USB.
+    $updateId    = [guid]::NewGuid().ToString('N')
+    $tempZip     = Join-Path $env:TEMP "endpoint-toolkit-update_$updateId.zip"
+    $tempExtract = Join-Path $env:TEMP "endpoint-toolkit-update_$updateId"
 
     $fail = {
         param([string]$Message)
@@ -214,8 +218,8 @@ function Update-UsbToolkit {
 
     # Extract and deploy
     try {
-        if (Test-Path $tempExtract) { Remove-Item $tempExtract -Recurse -Force }
-        Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
+        if (Test-Path -LiteralPath $tempExtract) { throw "$tempExtract already exists" }
+        Expand-Archive -Path $tempZip -DestinationPath $tempExtract
     } catch {
         & $fail "Could not extract the update: $($_.Exception.Message)"
         return

@@ -135,11 +135,13 @@ If you need something that isn't on this list, ask the toolkit provider to add i
 - Clicking a locked module (or **USB Toolkit**) asks for the password **once** and unlocks every locked module and the secrets for that session. They are decrypted in memory only, never written to disk.
 - A **USB** needs the locked exe's password to create, then gets **its own password**. It only unlocks on that physical stick, so copied files are useless elsewhere. BitLocker To Go protects the stick when it's unplugged.
 - Changed toolkit files are refused. If any file under `dependencies\` or `client\` was edited, added or removed, the kit won't unlock ("Kit files were changed"). Rebuild the kit or re-create the USB. Your own files elsewhere on the stick, and installers added to `CustomInstallers`, are fine and can be edited freely.
-- A locked USB only takes automatic **core** updates. With your own update feed it skips self-updates. Re-create the USB to update it.
+- A locked USB never self-updates (since core 2.2.1). Re-create the USB from the new version to update it.
+- Passwords for locked exes and USB sticks must be at least 8 characters.
 
 **Limits (be aware):**
 - Anyone who knows a kit's password can use its secrets, because the toolkit has to use them. Give the password only to technicians who may use them, and change it (rebuild) when someone leaves.
 - Unlocked modules and the core stay readable to anyone who can open the exe. Lock anything that should stay private.
+- The changed-files check catches accidental or casual edits, but someone who can rewrite the kit's files can also rewrite the check. What protects a USB is BitLocker To Go. Keep sticks and exes where only your technicians can change them.
 - Your own update feed's releases (`latest.zip`) contain your `client\` folder **in plain form, without secrets**. Keep that repo private if your locked modules are sensitive.
 
 ---
@@ -226,6 +228,14 @@ git add client; git commit -m "Add Acme client"; git push
 ---
 
 ## Changelog
+
+### Core 2.2.1 (security fixes)
+- Fixed: under ConnectWise / SYSTEM, another user of the PC could prepare `C:\Windows\Temp\EndpointToolkit_SC` so their code ran as SYSTEM when the exe started. The exe now refuses to start if that folder can't be removed and secured. **Rebuild your exes and replace them in ConnectWise Toolbox.**
+- Fixed: a locked kit with no locked modules or secrets accepted some wrong passwords. Key files (`.sfx-key`, `.toolkit-key`) now use a random salt and a tamper check. Kits made with older versions keep working, and the wrong-password problem is fixed for them too, but rebuild them to get the stronger key file.
+- Fixed: a kit with edited core files could still unlock by also editing `core-manifest.json`. Because of this, **locked USB sticks no longer self-update**: re-create them from the new version.
+- Fixed: the USB self-update now uses a new, unique temp folder each time.
+- Fixed: the release workflow no longer pastes `ProductName` or the version into shell commands.
+- Changed: passwords for locked exes and USB sticks must be at least 8 characters.
 
 ### Core 2.2.0
 - New: **Secrets page** in the wizard and `Get-ToolkitSecret`. Values are protected by Windows on your PC and encrypted into locked exe/USB builds (see [Secrets and locked kits](#secrets-and-locked-kits)).

@@ -414,8 +414,8 @@ function Get-UsbToolkitUI {
             $toolkitPassword = ConvertTo-SecureString -String $pwdText -AsPlainText -Force
         }
 
-        if ($toolkitPassword -eq $null -or $toolkitPassword.Length -eq 0) {
-            [System.Windows.MessageBox]::Show('Please enter a password for the USB toolkit.', 'Password Required', 'OK', 'Warning') | Out-Null
+        if ($null -eq $toolkitPassword -or $toolkitPassword.Length -lt 8) {
+            [System.Windows.MessageBox]::Show('Please enter a password of at least 8 characters for the USB toolkit.', 'Password Required', 'OK', 'Warning') | Out-Null
             $Global:SyncHash.UsbSetupBtn.IsEnabled = $true
             $Global:SyncHash.UsbDriveCombo.IsEnabled = $true
             $Global:SyncHash.UsbRefreshBtn.IsEnabled = $true

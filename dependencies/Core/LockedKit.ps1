@@ -103,21 +103,20 @@ function Get-ToolkitMainKeyFromPassword {
 
 function Test-ToolkitKitIntegrity {
     # Compares the kit on disk with the vault's build-time manifest. Returns the changed paths (empty = OK).
-    # Checked: every file under dependencies\ and client\. A core file may also match
-    # dependencies\core-manifest.json, so a USB that self-updated its core still unlocks.
+    # Checked: every file under dependencies\ and client\, including dependencies\core-manifest.json.
+    # The vault manifest is the only source of trust: the plain core-manifest.json is NOT accepted as an
+    # alternative, because anyone who edits a core file can edit its hash there too. (Locked USBs therefore
+    # do not self-update; see Update-UsbToolkit.)
     # Not checked: CustomInstallers / Installers (technicians add installers there), client\Data,
     # client\_removed, client\.locked (the vault authenticates itself), and anything outside
     # dependencies\ and client\ (the technician's own files on the USB).
+    # This is tamper evidence, not a security boundary: the checking code runs from the kit itself. The
+    # protection for a USB is BitLocker To Go (Setup-UsbToolkit enables it).
     param(
         [Parameter(Mandatory)][string]$Parent,
         [Parameter(Mandatory)][hashtable]$Manifest
     )
     . (Join-Path $Parent 'dependencies\Agent\CoreIntegrity.ps1')   # Get-ToolkitFileHash
-    $core = @{}
-    $coreManifestPath = Join-Path $Parent 'dependencies\core-manifest.json'
-    if (Test-Path -LiteralPath $coreManifestPath) {
-        try { (Get-Content -LiteralPath $coreManifestPath -Raw | ConvertFrom-Json).Files.PSObject.Properties | ForEach-Object { $core[$_.Name] = $_.Value } } catch { }
-    }
     $root = (Resolve-Path -LiteralPath $Parent).Path.TrimEnd('\')
     $changed = [System.Collections.Generic.List[string]]::new()
     $seen = @{}
@@ -129,13 +128,11 @@ function Test-ToolkitKitIntegrity {
             if (Test-ToolkitIntegritySkip $rel) { continue }
             $seen[$rel] = $true
             $hash = Get-ToolkitFileHash $f.FullName
-            $ok = ($Manifest.ContainsKey($rel) -and $Manifest[$rel] -eq $hash) -or
-                  ($rel -like 'dependencies/*' -and $core.ContainsKey($rel) -and $core[$rel] -eq $hash)
-            if (-not $ok) { $changed.Add($rel) }
+            if (-not ($Manifest.ContainsKey($rel) -and $Manifest[$rel] -eq $hash)) { $changed.Add($rel) }
         }
     }
     foreach ($rel in $Manifest.Keys) {
-        if ($rel -like 'client/*' -and -not $seen.ContainsKey($rel) -and -not (Test-ToolkitIntegritySkip $rel)) { $changed.Add("$rel (missing)") }
+        if (-not $seen.ContainsKey($rel) -and -not (Test-ToolkitIntegritySkip $rel)) { $changed.Add("$rel (missing)") }
     }
     return $changed.ToArray()   # callers wrap in @() (an empty result is an empty array)
 }
@@ -145,7 +142,6 @@ function Test-ToolkitIntegritySkip {
     $p = $RelativePath
     if ($p -match '(^|/)(CustomInstallers|Installers)(/|$)') { return $true }
     if ($p -match '^client/(Data|_removed|\.locked)(/|$)') { return $true }
-    if ($p -eq 'dependencies/core-manifest.json') { return $true }
     return $false
 }
 

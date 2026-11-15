@@ -49,80 +49,81 @@ function Get-ToolkitUsbSerial {
     return Get-DriveSerial -DriveLetter $Toolkit.UsbDrive
 }
 
+# ---------------------------------------------------------------------------
+# Key files: .toolkit-key (USB) and .sfx-key (locked exe) hold the kit's main key, wrapped with the password.
+#   Current format: base64 of a TKB1 blob (Protect-ToolkitBlob -Passphrase: random salt, 100k PBKDF2, HMAC).
+#   Legacy format (core < 2.2.1): base64 of IV | AES-CBC, no MAC, salt derived from the password. Still
+#   read, but a result is only accepted when it has the shape of a real main key, because without a MAC a
+#   wrong password decrypts to garbage with valid padding about 1 time in 256.
+# ---------------------------------------------------------------------------
+
+function Test-ToolkitMainKeyShape {
+    # New-ToolkitMainKey output (base64 of 32 bytes), or the 32-char alphanumeric key of core 2.0-2.1
+    param([string]$Key)
+    return [bool]($Key -cmatch '^[A-Za-z0-9+/]{43}=$' -or $Key -cmatch '^[A-Za-z0-9]{32}$')
+}
+
+function Protect-ToolkitKeyFile {
+    param([Parameter(Mandatory)][string]$MainKey, [Parameter(Mandatory)][string]$Passphrase)
+    $blob = Protect-ToolkitBlob -Bytes ([System.Text.Encoding]::UTF8.GetBytes($MainKey)) -Passphrase $Passphrase
+    return [Convert]::ToBase64String($blob)
+}
+
+function Unprotect-ToolkitKeyFile {
+    # The main key, or a throw (wrong password / changed file). -LegacySalt/-LegacySecret: the old format's inputs.
+    param(
+        [Parameter(Mandatory)][string]$EncryptedData,
+        [Parameter(Mandatory)][string]$Passphrase,
+        [Parameter(Mandatory)][string]$LegacySalt,
+        [Parameter(Mandatory)][string]$LegacySecret
+    )
+    $payload = [Convert]::FromBase64String($EncryptedData.Trim())
+    if ($payload.Length -ge 4 -and [System.Text.Encoding]::ASCII.GetString($payload, 0, 4) -eq 'TKB1') {
+        $key = [System.Text.Encoding]::UTF8.GetString((Unprotect-ToolkitBlob -Bytes $payload -Passphrase $Passphrase))
+    } else {
+        if ($payload.Length -lt 32) { throw 'The key file is too small or corrupted.' }
+        $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($LegacySecret, [System.Text.Encoding]::UTF8.GetBytes($LegacySalt), 50000, 'SHA256')
+        try { $aesKey = $derive.GetBytes(32) } finally { $derive.Dispose() }
+        $aes = [System.Security.Cryptography.Aes]::Create()
+        try {
+            $aes.Key = $aesKey
+            $aes.IV = [byte[]]$payload[0..15]
+            $plain = $aes.CreateDecryptor().TransformFinalBlock($payload, 16, $payload.Length - 16)
+        } finally { $aes.Dispose() }
+        $key = [System.Text.Encoding]::UTF8.GetString($plain)
+    }
+    if (-not (Test-ToolkitMainKeyShape $key)) { throw 'Wrong password, or the key file was changed.' }
+    return $key
+}
+
+function Get-ToolkitUsbPassphrase {
+    param([string]$DriveSerial, [string]$UserPassword)
+    $s = "USBBind:$DriveSerial"
+    if ($UserPassword) { $s += ":$UserPassword" }
+    return $s
+}
+
 function Protect-CachedPassword {
+    # .toolkit-key: the main key bound to this USB's serial and the USB password
     param([string]$Password, [string]$DriveSerial, [string]$UserPassword = '')
-    $salt = [System.Text.Encoding]::UTF8.GetBytes("ToolkitUSB:$DriveSerial")
-    $deriveStr = "USBBind:$DriveSerial"
-    if ($UserPassword) { $deriveStr += ":$UserPassword" }
-    $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($deriveStr, $salt, 50000, "SHA256")
-    $key = $derive.GetBytes(32)
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    $aes.Key = $key
-    $aes.GenerateIV()
-    $enc = $aes.CreateEncryptor()
-    $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($Password)
-    $encBytes = $enc.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
-    $payload = New-Object byte[] ($aes.IV.Length + $encBytes.Length)
-    [Array]::Copy($aes.IV, 0, $payload, 0, $aes.IV.Length)
-    [Array]::Copy($encBytes, 0, $payload, $aes.IV.Length, $encBytes.Length)
-    $aes.Dispose()
-    return [Convert]::ToBase64String($payload)
+    return Protect-ToolkitKeyFile -MainKey $Password -Passphrase (Get-ToolkitUsbPassphrase $DriveSerial $UserPassword)
 }
 
 function Unprotect-CachedPassword {
     param([string]$EncryptedData, [string]$DriveSerial, [string]$UserPassword = '')
-    $salt = [System.Text.Encoding]::UTF8.GetBytes("ToolkitUSB:$DriveSerial")
-    $deriveStr = "USBBind:$DriveSerial"
-    if ($UserPassword) { $deriveStr += ":$UserPassword" }
-    $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($deriveStr, $salt, 50000, "SHA256")
-    $key = $derive.GetBytes(32)
-    $payload = [Convert]::FromBase64String($EncryptedData)
-    $iv = $payload[0..15]
-    $ciphertext = $payload[16..($payload.Length - 1)]
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    $aes.Key = $key
-    $aes.IV = $iv
-    $dec = $aes.CreateDecryptor()
-    $plainBytes = $dec.TransformFinalBlock($ciphertext, 0, $ciphertext.Length)
-    $aes.Dispose()
-    return [System.Text.Encoding]::UTF8.GetString($plainBytes)
+    $secret = Get-ToolkitUsbPassphrase $DriveSerial $UserPassword
+    return Unprotect-ToolkitKeyFile -EncryptedData $EncryptedData -Passphrase $secret -LegacySalt "ToolkitUSB:$DriveSerial" -LegacySecret $secret
 }
 
 function Protect-SfxPassword {
+    # .sfx-key: the main key wrapped with the locked exe's password
     param([string]$MainToolkitKey, [string]$SfxPassword)
-    $salt = [System.Text.Encoding]::UTF8.GetBytes("ToolkitSFX:$SfxPassword")
-    $deriveStr = "SFXBind:$SfxPassword"
-    $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($deriveStr, $salt, 50000, "SHA256")
-    $key = $derive.GetBytes(32)
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    $aes.Key = $key
-    $aes.GenerateIV()
-    $enc = $aes.CreateEncryptor()
-    $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($MainToolkitKey)
-    $encBytes = $enc.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
-    $payload = New-Object byte[] ($aes.IV.Length + $encBytes.Length)
-    [Array]::Copy($aes.IV, 0, $payload, 0, $aes.IV.Length)
-    [Array]::Copy($encBytes, 0, $payload, $aes.IV.Length, $encBytes.Length)
-    $aes.Dispose()
-    return [Convert]::ToBase64String($payload)
+    return Protect-ToolkitKeyFile -MainKey $MainToolkitKey -Passphrase $SfxPassword
 }
 
 function Unprotect-SfxPassword {
     param([string]$EncryptedData, [string]$SfxPassword)
-    $salt = [System.Text.Encoding]::UTF8.GetBytes("ToolkitSFX:$SfxPassword")
-    $deriveStr = "SFXBind:$SfxPassword"
-    $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($deriveStr, $salt, 50000, "SHA256")
-    $key = $derive.GetBytes(32)
-    $payload = [Convert]::FromBase64String($EncryptedData)
-    $iv = $payload[0..15]
-    $ciphertext = $payload[16..($payload.Length - 1)]
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    $aes.Key = $key
-    $aes.IV = $iv
-    $dec = $aes.CreateDecryptor()
-    $plainBytes = $dec.TransformFinalBlock($ciphertext, 0, $ciphertext.Length)
-    $aes.Dispose()
-    return [System.Text.Encoding]::UTF8.GetString($plainBytes)
+    return Unprotect-ToolkitKeyFile -EncryptedData $EncryptedData -Passphrase $SfxPassword -LegacySalt "ToolkitSFX:$SfxPassword" -LegacySecret "SFXBind:$SfxPassword"
 }
 
 # ---------------------------------------------------------------------------
