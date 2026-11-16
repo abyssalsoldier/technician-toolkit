@@ -21,6 +21,16 @@ function Get-EndpointIdentity {
     elseif ($azureJoined) { $joinType = "Azure AD Joined" }
     elseif ($domainJoined) { $joinType = "Active Directory Domain Joined" }
 
+    # Uptime (from the Win32_OperatingSystem query above, no extra cost)
+    $uptime = 'N/A'
+    $uptimeDays = $null
+    if ($os.LastBootUpTime) {
+        $span = (Get-Date) - $os.LastBootUpTime
+        $uptimeDays = $span.TotalDays
+        $uptime = '{0}d {1}h {2}m (last boot {3})' -f [int][math]::Floor($span.TotalDays), $span.Hours, $span.Minutes,
+            $os.LastBootUpTime.ToString('yyyy-MM-dd HH:mm')
+    }
+
     @{
         Hostname     = $env:COMPUTERNAME
         Serial       = if ($bios.SerialNumber) { $bios.SerialNumber.Trim() } else { 'N/A' }
@@ -31,6 +41,8 @@ function Get-EndpointIdentity {
         OSBuild      = if ($os.BuildNumber) { $os.BuildNumber } else { 'N/A' }
         Domain       = if ($cs.PartOfDomain) { $cs.Domain } else { $cs.Workgroup + ' (Workgroup)' }
         JoinType     = $joinType
+        Uptime       = $uptime
+        UptimeDays   = $uptimeDays
     }
 }
 

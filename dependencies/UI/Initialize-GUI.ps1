@@ -653,6 +653,14 @@ function Build-DashboardUI {
     $panel.Children.Add((& $makeRow 'Serial' $identity.Serial)) | Out-Null
     $panel.Children.Add((& $makeRow 'Model' "$($identity.Manufacturer) $($identity.Model)")) | Out-Null
     $panel.Children.Add((& $makeRow 'OS' "$($identity.OSCaption) $($identity.OSVersion) (Build $($identity.OSBuild))")) | Out-Null
+    $uptimeRow = & $makeRow 'Uptime' $identity.Uptime
+    if ($null -ne $identity.UptimeDays -and $identity.UptimeDays -gt 7) {
+        # Over a week without a reboot: highlight and nudge the technician
+        $uptimeRow.Children[1].Text = "$($identity.Uptime)  " + [char]0x26A0 + ' Reboot recommended (over 7 days)'
+        $uptimeRow.Children[1].Foreground = $yellowBrush
+        $uptimeRow.Children[1].FontWeight = 'Bold'
+    }
+    $panel.Children.Add($uptimeRow) | Out-Null
     $panel.Children.Add((& $makeRow 'Domain' $identity.Domain)) | Out-Null
     $panel.Children.Add((& $makeRow 'Management State' $identity.JoinType)) | Out-Null
 
